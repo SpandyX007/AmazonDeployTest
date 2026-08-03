@@ -1,0 +1,3 @@
+.myapp/
+.env
+__pycache__/
