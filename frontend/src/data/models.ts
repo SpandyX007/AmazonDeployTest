@@ -128,11 +128,3 @@ export const SAMPLE_CONVERSATIONS: Conversation[] = [
     group: 'Previous 7 days',
   },
 ]
-
-/** Opening moves, presented as a numbered index rather than a card grid. */
-export const SUGGESTIONS = [
-  { title: 'Review my code', body: 'Find the bugs in this FastAPI endpoint' },
-  { title: 'Brainstorm', body: 'Ten names for an AI note-taking app' },
-  { title: 'Explain a concept', body: 'How does JWT authentication actually work' },
-  { title: 'Write a draft', body: 'A launch email for our new public API' },
-]

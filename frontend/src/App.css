@@ -20,13 +20,13 @@
 .main::before {
   content: '';
   position: absolute;
-  top: -160px;
+  top: 50%;
   left: 50%;
-  width: 900px;
-  height: 460px;
-  transform: translateX(-50%);
+  width: 940px;
+  height: 520px;
+  transform: translate(-50%, -60%);
   background: radial-gradient(closest-side, var(--accent-wash), transparent 70%);
-  opacity: 0.75;
+  opacity: 0.7;
   pointer-events: none;
 }
 
@@ -693,18 +693,28 @@
 
 /* ---------- welcome ---------- */
 
+/* Empty state is a single centred column — nothing else competes with it.
+   `safe center` so a short viewport still scrolls instead of clipping the top. */
+.thread.is-empty {
+  display: flex;
+  align-items: center;
+  align-items: safe center;
+  justify-content: center;
+}
+
 .welcome {
   position: relative;
   width: min(var(--thread-w), 100%);
-  margin: 0 auto;
-  padding: clamp(44px, 12vh, 108px) 24px 32px;
+  padding: 40px 24px;
+  text-align: center;
 }
 
 .welcome-eyebrow {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  margin-bottom: 26px;
+  margin-bottom: 30px;
 }
 
 .tick {
@@ -722,6 +732,7 @@
   letter-spacing: -0.025em;
   color: var(--ink);
   max-width: 15ch;
+  margin: 0 auto;
 }
 
 .welcome-title .word {
@@ -745,99 +756,11 @@
 }
 
 .welcome-sub {
-  max-width: 40ch;
-  margin-top: 22px;
+  max-width: 44ch;
+  margin: 24px auto 0;
   font-size: 15px;
   line-height: 1.6;
   color: var(--ink-2);
-}
-
-.starters {
-  margin-top: 52px;
-  border-top: 1px solid var(--ink);
-}
-
-.starters-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 2px;
-  border-bottom: 1px solid var(--rule);
-}
-
-/* Numbered index, not a card grid — the table-of-contents move. */
-.starter {
-  position: relative;
-  display: grid;
-  width: 100%;
-  grid-template-columns: 34px 190px 1fr 24px;
-  align-items: baseline;
-  gap: 14px;
-  padding: 17px 2px;
-  border-bottom: 1px solid var(--rule-soft);
-  text-align: left;
-  transition: padding-left 0.28s var(--ease);
-}
-
-.starter::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: var(--ink);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.4s var(--ease);
-}
-
-.starter:hover {
-  padding-left: 12px;
-}
-
-.starter:hover::after {
-  transform: scaleX(1);
-}
-
-.starter-index {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-3);
-  transition: color 0.2s var(--ease);
-}
-
-.starter:hover .starter-index {
-  color: var(--ink);
-}
-
-.starter-title {
-  font-family: var(--display);
-  font-size: 21px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-.starter-body {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.starter-arrow {
-  width: 17px;
-  height: 17px;
-  align-self: center;
-  color: var(--ink-3);
-  opacity: 0;
-  transform: translateX(-8px);
-  transition: opacity 0.24s var(--ease), transform 0.24s var(--ease);
-}
-
-.starter:hover .starter-arrow {
-  opacity: 1;
-  transform: translateX(0);
-  color: var(--ink);
 }
 
 /* ---------- composer ---------- */
@@ -1014,15 +937,6 @@ kbd {
   .byline-rule {
     width: 18px;
     margin-bottom: 0;
-  }
-
-  .starter {
-    grid-template-columns: 26px 1fr 20px;
-    gap: 6px 12px;
-  }
-
-  .starter-body {
-    grid-column: 2 / span 2;
   }
 
   .user-block {

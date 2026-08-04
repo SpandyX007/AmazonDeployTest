@@ -103,11 +103,3 @@ export function RetryIcon({ className }: IconProps) {
     </svg>
   )
 }
-
-export function ArrowIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M5 12h13M12 6l6 6-6 6" />
-    </svg>
-  )
-}

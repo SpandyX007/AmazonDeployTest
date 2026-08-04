@@ -4,8 +4,8 @@ import { Sidebar } from './components/Sidebar'
 import { ModelPicker } from './components/ModelPicker'
 import { ChatMessage, TypingMessage } from './components/ChatMessage'
 import { Composer } from './components/Composer'
-import { ArrowIcon, MoonIcon, SidebarIcon, SunIcon } from './components/Icons'
-import { DEFAULT_MODEL_ID, MODELS, SUGGESTIONS, getModel } from './data/models'
+import { MoonIcon, SidebarIcon, SunIcon } from './components/Icons'
+import { DEFAULT_MODEL_ID, MODELS, getModel } from './data/models'
 import type { Message } from './types'
 import './App.css'
 
@@ -160,7 +160,7 @@ export default function App() {
           </button>
         </header>
 
-        <div className="thread" ref={threadRef}>
+        <div className={`thread ${isEmpty ? 'is-empty' : ''}`} ref={threadRef}>
           {isEmpty ? (
             <section className="welcome">
               <p className="label welcome-eyebrow">
@@ -175,26 +175,6 @@ export default function App() {
                 One thread, every model. Pick the mind that fits the question —
                 the conversation carries over.
               </p>
-
-              <div className="starters">
-                <div className="starters-head label">
-                  <span>Opening moves</span>
-                  <span>Prompt</span>
-                </div>
-                {SUGGESTIONS.map((item, i) => (
-                  <button
-                    type="button"
-                    key={item.title}
-                    className="starter"
-                    onClick={() => send(item.body)}
-                  >
-                    <span className="starter-index">{String(i + 1).padStart(2, '0')}</span>
-                    <span className="starter-title">{item.title}</span>
-                    <span className="starter-body">{item.body}</span>
-                    <ArrowIcon className="starter-arrow" />
-                  </button>
-                ))}
-              </div>
             </section>
           ) : (
             <div className="messages">
