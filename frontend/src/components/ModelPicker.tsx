@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { MODELS, getModel } from '../data/models'
-import { ChevronIcon, CheckIcon } from './Icons'
+import { ChevronIcon } from './Icons'
 import type { Model } from '../types'
 
 interface Props {
@@ -47,7 +47,7 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
     <div className="model-picker" ref={rootRef}>
       <button
         type="button"
-        className="model-trigger"
+        className={`model-trigger ${open ? 'is-open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -60,7 +60,7 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
         </span>
         <span className="model-trigger-text">
           <span className="model-trigger-name">{selected.name}</span>
-          <span className="model-trigger-provider">{selected.provider}</span>
+          <span className="label model-trigger-id">{selected.id}</span>
         </span>
         <ChevronIcon className={`chevron ${open ? 'is-open' : ''}`} />
       </button>
@@ -68,14 +68,15 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
       {open && (
         <div className="model-menu" role="listbox" aria-label="Select a model">
           <div className="model-menu-head">
-            <span>Choose a model</span>
-            <span className="model-menu-count">{MODELS.length} available</span>
+            <span className="model-menu-title">Model index</span>
+            <span className="label">{MODELS.length} available</span>
           </div>
 
           <div className="model-menu-scroll">
             {groupByProvider(MODELS).map((group) => (
               <div className="model-group" key={group.provider}>
-                <div className="model-group-label">{group.provider}</div>
+                <div className="model-group-label label">{group.provider}</div>
+
                 {group.models.map((model) => {
                   const isSelected = model.id === selectedId
                   return (
@@ -89,29 +90,22 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
                         onSelect(model.id)
                         setOpen(false)
                       }}
+                      style={{ '--hue': model.hue } as CSSProperties}
                     >
-                      <span
-                        className="model-badge"
-                        style={{ '--hue': model.hue } as CSSProperties}
-                      >
-                        {model.initials}
+                      <span className="model-option-name">{model.name}</span>
+                      <span className="model-option-tagline">{model.tagline}</span>
+                      <span className="label model-option-spec">
+                        {model.context} · {model.speed}
                       </span>
-                      <span className="model-option-body">
-                        <span className="model-option-title">
-                          {model.name}
-                          <span className={`speed-tag speed-${model.speed.toLowerCase()}`}>
-                            {model.speed}
-                          </span>
-                        </span>
-                        <span className="model-option-tagline">{model.tagline}</span>
-                        <span className="model-option-meta">{model.context} context</span>
-                      </span>
-                      {isSelected && <CheckIcon className="model-option-check" />}
                     </button>
                   )
                 })}
               </div>
             ))}
+          </div>
+
+          <div className="model-menu-foot label">
+            Served over Groq · switching keeps the thread
           </div>
         </div>
       )}

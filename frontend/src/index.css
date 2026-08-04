@@ -1,38 +1,48 @@
-/* ---------- design tokens ---------- */
+/* ==========================================================================
+   Design language: "editorial terminal"
+   - Two-colour conviction (ink + one electric accent), no decorative gradients
+   - Hairline rules instead of soft shadows; near-square geometry
+   - Serif display / mono labels / tight sans body
+   ========================================================================== */
 
 :root {
-  --bg: #ffffff;
-  --bg-sunken: #f6f6f9;
-  --surface: #ffffff;
-  --surface-2: #f1f1f5;
-  --border: #e5e5ec;
-  --border-soft: #eeeef3;
-  --text: #14141a;
-  --text-2: #5b5b6b;
-  --text-3: #8d8d9e;
-  --accent: #6b4dff;
-  --accent-2: #9b6bff;
-  --accent-fg: #ffffff;
-  --accent-soft: rgba(107, 77, 255, 0.1);
-  --ring: rgba(107, 77, 255, 0.35);
-  --shadow-1:
-    0 1px 2px rgba(16, 16, 32, 0.06), 0 4px 14px rgba(16, 16, 32, 0.05);
-  --shadow-2: 0 14px 44px rgba(16, 16, 32, 0.16);
-  --badge-l: 42%;
-  --badge-s: 62%;
+  /* paper & ink */
+  --paper: #f4f3ef;
+  --paper-2: #eceae4;
+  --paper-3: #e3e0d8;
+  --ink: #111112;
+  --ink-2: #55554f;
+  --ink-3: #8a8980;
+  --rule: #d8d5cc;
+  --rule-soft: #e6e3db;
 
-  --sans:
-    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  /* inverted block (user messages, primary actions) */
+  --invert-bg: #111112;
+  --invert-fg: #f4f3ef;
 
-  --radius: 14px;
-  --radius-lg: 20px;
-  --sidebar-w: 272px;
-  --thread-w: 780px;
+  /* the single accent — always ink text on accent fill, never accent text on paper */
+  --accent: #d2ff00;
+  --accent-ink: #111112;
+  --accent-line: #b4dc00;
+  --accent-wash: rgba(180, 220, 0, 0.16);
+
+  --badge-l: 34%;
+  --badge-s: 58%;
+
+  --display: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --sans: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  --r: 2px;
+  --sidebar-w: 268px;
+  --thread-w: 820px;
+  --gutter: 128px;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   font: 15px/1.6 var(--sans);
-  color: var(--text);
-  background: var(--bg);
+  color: var(--ink);
+  background: var(--paper);
   color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -40,50 +50,41 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Dark palette — by system preference until the toggle stamps data-theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0c0c12;
-    --bg-sunken: #08080d;
-    --surface: #14141f;
-    --surface-2: #1c1c2a;
-    --border: #262636;
-    --border-soft: #1d1d2b;
-    --text: #ecedf5;
-    --text-2: #a2a2b8;
-    --text-3: #73738c;
-    --accent: #8b6cff;
-    --accent-2: #b98cff;
-    --accent-fg: #0b0b12;
-    --accent-soft: rgba(139, 108, 255, 0.16);
-    --ring: rgba(139, 108, 255, 0.45);
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.55);
-    --badge-l: 66%;
-    --badge-s: 60%;
+    --paper: #0d0d0e;
+    --paper-2: #141416;
+    --paper-3: #1b1b1e;
+    --ink: #f2f1ec;
+    --ink-2: #9e9d96;
+    --ink-3: #6b6a64;
+    --rule: #26262a;
+    --rule-soft: #1c1c1f;
+    --invert-bg: #f2f1ec;
+    --invert-fg: #0d0d0e;
+    --accent-line: #d2ff00;
+    --accent-wash: rgba(210, 255, 0, 0.14);
+    --badge-l: 68%;
+    --badge-s: 52%;
     color-scheme: dark;
   }
 }
 
 :root[data-theme='dark'] {
-  --bg: #0c0c12;
-  --bg-sunken: #08080d;
-  --surface: #14141f;
-  --surface-2: #1c1c2a;
-  --border: #262636;
-  --border-soft: #1d1d2b;
-  --text: #ecedf5;
-  --text-2: #a2a2b8;
-  --text-3: #73738c;
-  --accent: #8b6cff;
-  --accent-2: #b98cff;
-  --accent-fg: #0b0b12;
-  --accent-soft: rgba(139, 108, 255, 0.16);
-  --ring: rgba(139, 108, 255, 0.45);
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.55);
-  --badge-l: 66%;
-  --badge-s: 60%;
+  --paper: #0d0d0e;
+  --paper-2: #141416;
+  --paper-3: #1b1b1e;
+  --ink: #f2f1ec;
+  --ink-2: #9e9d96;
+  --ink-3: #6b6a64;
+  --rule: #26262a;
+  --rule-soft: #1c1c1f;
+  --invert-bg: #f2f1ec;
+  --invert-fg: #0d0d0e;
+  --accent-line: #d2ff00;
+  --accent-wash: rgba(210, 255, 0, 0.14);
+  --badge-l: 68%;
+  --badge-s: 52%;
   color-scheme: dark;
 }
 
@@ -101,7 +102,7 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--paper);
 }
 
 button {
@@ -124,37 +125,63 @@ p {
   margin: 0;
 }
 
+/* ---------- shared editorial primitives ---------- */
+
+/* Mono, uppercase, wide-tracked — used for every small label in the UI. */
+.label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.rule {
+  height: 1px;
+  background: var(--rule);
+}
+
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-line);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
-/* Slim scrollbars that fade into the surface they sit on. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--rule) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--rule);
   border: 3px solid transparent;
   background-clip: content-box;
-  border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-3);
+  background: var(--ink-3);
   background-clip: content-box;
+}
+
+/* Film grain — the texture layer that keeps flat colour from reading as sterile. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { SAMPLE_CONVERSATIONS, getModel } from '../data/models'
-import { PlusIcon, SidebarIcon, TrashIcon } from './Icons'
+import { PlusIcon, SidebarIcon } from './Icons'
 
 interface Props {
   open: boolean
@@ -12,17 +12,27 @@ interface Props {
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 days']
 
+/** Flat reading order, so the index numbers run 01..n across all groups. */
+const ORDERED_IDS = GROUP_ORDER.flatMap((group) =>
+  SAMPLE_CONVERSATIONS.filter((c) => c.group === group).map((c) => c.id),
+)
+
 export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props) {
   return (
     <aside className={`sidebar ${open ? 'is-open' : ''}`}>
       <div className="sidebar-head">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <span className="brand-name">Nexus</span>
+          <span className="brand-mark" aria-hidden="true">
+            N
+          </span>
+          <span className="brand-text">
+            <span className="brand-name">Nexus</span>
+            <span className="label brand-sub">Multi-model</span>
+          </span>
         </div>
         <button
           type="button"
-          className="icon-btn sidebar-close"
+          className="icon-btn"
           onClick={onClose}
           aria-label="Collapse sidebar"
         >
@@ -31,8 +41,8 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
       </div>
 
       <button type="button" className="new-chat" onClick={onNewChat}>
+        <span>New thread</span>
         <PlusIcon />
-        New chat
       </button>
 
       <nav className="conv-list" aria-label="Chat history">
@@ -42,9 +52,15 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
 
           return (
             <div className="conv-group" key={group}>
-              <div className="conv-group-label">{group}</div>
+              <div className="conv-group-label label">
+                <span>{group}</span>
+                <span className="conv-group-count">{items.length}</span>
+              </div>
+
               {items.map((conv) => {
                 const model = getModel(conv.modelId)
+                const index = ORDERED_IDS.indexOf(conv.id) + 1
+
                 return (
                   <button
                     type="button"
@@ -52,15 +68,13 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
                     className={`conv-item ${activeId === conv.id ? 'is-active' : ''}`}
                     onClick={() => onSelect(conv.id)}
                   >
+                    <span className="conv-index">{String(index).padStart(2, '0')}</span>
+                    <span className="conv-title">{conv.title}</span>
                     <span
                       className="conv-dot"
                       style={{ '--hue': model.hue } as CSSProperties}
-                      aria-hidden="true"
+                      title={model.name}
                     />
-                    <span className="conv-title">{conv.title}</span>
-                    <span className="conv-actions">
-                      <TrashIcon className="conv-trash" />
-                    </span>
                   </button>
                 )
               })}
@@ -74,7 +88,7 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
           <span className="avatar avatar-user">S</span>
           <span className="user-meta">
             <span className="user-name">Spandan</span>
-            <span className="user-plan">Free plan</span>
+            <span className="label user-plan">Free plan</span>
           </span>
         </button>
       </div>

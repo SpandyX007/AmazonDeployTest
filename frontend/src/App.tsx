@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ModelPicker } from './components/ModelPicker'
 import { ChatMessage, TypingMessage } from './components/ChatMessage'
 import { Composer } from './components/Composer'
-import { MoonIcon, SidebarIcon, SunIcon } from './components/Icons'
-import { SUGGESTION_ICONS } from './components/suggestionIcons'
-import { DEFAULT_MODEL_ID, SUGGESTIONS, getModel } from './data/models'
+import { ArrowIcon, MoonIcon, SidebarIcon, SunIcon } from './components/Icons'
+import { DEFAULT_MODEL_ID, MODELS, SUGGESTIONS, getModel } from './data/models'
 import type { Message } from './types'
 import './App.css'
 
@@ -21,6 +21,19 @@ function nextId() {
   return `m${messageCounter}`
 }
 
+/** Splits a headline into per-word spans so it can rise in sequence. */
+function KineticHeadline({ text }: { text: string }) {
+  return (
+    <h1 className="welcome-title">
+      {text.split(' ').map((word, i) => (
+        <span className="word" key={`${word}-${i}`} style={{ '--i': i } as CSSProperties}>
+          {word}
+        </span>
+      ))}
+    </h1>
+  )
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(preferredTheme)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -32,6 +45,8 @@ export default function App() {
 
   const threadRef = useRef<HTMLDivElement>(null)
   const replyTimer = useRef<number | undefined>(undefined)
+
+  const model = getModel(modelId)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -60,7 +75,6 @@ export default function App() {
 
     // UI-only placeholder. Swap this block for the /response API call later.
     replyTimer.current = window.setTimeout(() => {
-      const model = getModel(modelId)
       setMessages((prev) => [
         ...prev,
         {
@@ -71,7 +85,7 @@ export default function App() {
           content:
             `This is a preview of how ${model.name} by ${model.provider} will answer. ` +
             `The interface is not connected to the backend yet — once /response is wired up, ` +
-            `the real reply will stream into this bubble.`,
+            `the real reply will stream into this column.`,
         },
       ])
       setIsStreaming(false)
@@ -94,6 +108,8 @@ export default function App() {
 
   return (
     <div className={`app ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <div className="grain" aria-hidden="true" />
+
       <Sidebar
         open={sidebarOpen}
         activeId={activeConversation}
@@ -102,11 +118,7 @@ export default function App() {
         onClose={() => setSidebarOpen(false)}
       />
 
-      <div
-        className="scrim"
-        onClick={() => setSidebarOpen(false)}
-        aria-hidden={!sidebarOpen}
-      />
+      <div className="scrim" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
 
       <main className="main">
         <header className="topbar">
@@ -122,6 +134,22 @@ export default function App() {
             <ModelPicker selectedId={modelId} onSelect={setModelId} />
           </div>
 
+          {/* Instrument rail — mono readout of the live session. */}
+          <div className="readout" aria-hidden="true">
+            <span className="readout-cell">
+              <em>ctx</em>
+              {model.context}
+            </span>
+            <span className="readout-cell">
+              <em>turns</em>
+              {String(messages.length).padStart(2, '0')}
+            </span>
+            <span className="readout-cell">
+              <span className={`pulse ${isStreaming ? 'is-live' : ''}`} />
+              {isStreaming ? 'generating' : 'ready'}
+            </span>
+          </div>
+
           <button
             type="button"
             className="icon-btn"
@@ -134,32 +162,40 @@ export default function App() {
 
         <div className="thread" ref={threadRef}>
           {isEmpty ? (
-            <div className="welcome">
-              <span className="welcome-glow" aria-hidden="true" />
-              <h1 className="welcome-title">What can I help you build?</h1>
-              <p className="welcome-sub">
-                Pick a model above, then start the conversation. You can switch models
-                at any point without losing the thread.
+            <section className="welcome">
+              <p className="label welcome-eyebrow">
+                <span>AI Workspace</span>
+                <span className="tick" />
+                <span>{MODELS.length} models online</span>
               </p>
 
-              <div className="suggestions">
-                {SUGGESTIONS.map((item) => {
-                  const Icon = SUGGESTION_ICONS[item.icon]
-                  return (
-                    <button
-                      type="button"
-                      key={item.title}
-                      className="suggestion"
-                      onClick={() => send(item.body)}
-                    >
-                      <Icon className="suggestion-icon" />
-                      <span className="suggestion-title">{item.title}</span>
-                      <span className="suggestion-body">{item.body}</span>
-                    </button>
-                  )
-                })}
+              <KineticHeadline text="Ask anything. Switch minds mid-thought." />
+
+              <p className="welcome-sub">
+                One thread, every model. Pick the mind that fits the question —
+                the conversation carries over.
+              </p>
+
+              <div className="starters">
+                <div className="starters-head label">
+                  <span>Opening moves</span>
+                  <span>Prompt</span>
+                </div>
+                {SUGGESTIONS.map((item, i) => (
+                  <button
+                    type="button"
+                    key={item.title}
+                    className="starter"
+                    onClick={() => send(item.body)}
+                  >
+                    <span className="starter-index">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="starter-title">{item.title}</span>
+                    <span className="starter-body">{item.body}</span>
+                    <ArrowIcon className="starter-arrow" />
+                  </button>
+                ))}
               </div>
-            </div>
+            </section>
           ) : (
             <div className="messages">
               {messages.map((message) => (

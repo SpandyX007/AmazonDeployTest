@@ -60,7 +60,7 @@ export function Composer({
           className="composer-input"
           rows={1}
           value={value}
-          placeholder={`Message ${model.name}…`}
+          placeholder={`Ask ${model.name}`}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
         />
@@ -81,8 +81,15 @@ export function Composer({
         )}
       </form>
 
-      <p className="composer-hint">
-        <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line
+      <p className="label composer-hint">
+        <span>
+          <kbd>Enter</kbd> send
+        </span>
+        <span>
+          <kbd>Shift</kbd>
+          <kbd>Enter</kbd> new line
+        </span>
+        <span className="composer-count">{value.length} chars</span>
       </p>
     </div>
   )

@@ -28,14 +28,6 @@ export function ChevronIcon({ className }: IconProps) {
   )
 }
 
-export function CheckIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className} strokeWidth={2}>
-      <path d="m5 13 4 4 10-10" />
-    </svg>
-  )
-}
-
 export function SendIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>
@@ -112,37 +104,10 @@ export function RetryIcon({ className }: IconProps) {
   )
 }
 
-export function CodeIcon({ className }: IconProps) {
+export function ArrowIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>
-      <path d="m9 8-5 4 5 4M15 8l5 4-5 4" />
-    </svg>
-  )
-}
-
-export function SparkIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M12 3.5 13.8 9 19 10.8 13.8 12.6 12 18l-1.8-5.4L5 10.8 10.2 9 12 3.5Z" />
-      <path d="M18.5 16.5 19 18l1.5.5L19 19l-.5 1.5L18 19l-1.5-.5L18 18l.5-1.5Z" />
-    </svg>
-  )
-}
-
-export function BookIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" />
-      <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z" />
-    </svg>
-  )
-}
-
-export function PenIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
-      <path d="M14.5 6.5l3 3" />
+      <path d="M5 12h13M12 6l6 6-6 6" />
     </svg>
   )
 }

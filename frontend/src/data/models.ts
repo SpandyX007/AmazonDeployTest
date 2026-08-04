@@ -129,25 +129,10 @@ export const SAMPLE_CONVERSATIONS: Conversation[] = [
   },
 ]
 
+/** Opening moves, presented as a numbered index rather than a card grid. */
 export const SUGGESTIONS = [
-  {
-    icon: 'code' as const,
-    title: 'Review my code',
-    body: 'Find bugs in this FastAPI endpoint',
-  },
-  {
-    icon: 'spark' as const,
-    title: 'Brainstorm',
-    body: 'Ten names for an AI note-taking app',
-  },
-  {
-    icon: 'book' as const,
-    title: 'Explain a concept',
-    body: 'How does JWT authentication work?',
-  },
-  {
-    icon: 'pen' as const,
-    title: 'Write a draft',
-    body: 'A launch email for our new API',
-  },
+  { title: 'Review my code', body: 'Find the bugs in this FastAPI endpoint' },
+  { title: 'Brainstorm', body: 'Ten names for an AI note-taking app' },
+  { title: 'Explain a concept', body: 'How does JWT authentication actually work' },
+  { title: 'Write a draft', body: 'A launch email for our new public API' },
 ]
