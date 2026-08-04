@@ -4,7 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Pin to backend/.env so the key is found regardless of the working directory.
-load_dotenv(Path(__file__).with_name(".env"))
+load_dotenv()
 
 api_key = os.getenv("GROQ_API_KEY")
 if not api_key:
