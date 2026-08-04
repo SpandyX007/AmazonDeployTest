@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from groq import GPTresponse
+from backend.providers.groq import GPTresponse
 
 app = FastAPI(title="LLM API Service")
 
