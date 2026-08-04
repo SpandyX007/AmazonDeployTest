@@ -1,122 +1,184 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useEffect, useRef, useState } from 'react'
+import { Sidebar } from './components/Sidebar'
+import { ModelPicker } from './components/ModelPicker'
+import { ChatMessage, TypingMessage } from './components/ChatMessage'
+import { Composer } from './components/Composer'
+import { MoonIcon, SidebarIcon, SunIcon } from './components/Icons'
+import { SUGGESTION_ICONS } from './components/suggestionIcons'
+import { DEFAULT_MODEL_ID, SUGGESTIONS, getModel } from './data/models'
+import type { Message } from './types'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+type Theme = 'light' | 'dark'
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function preferredTheme(): Theme {
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-export default App
+let messageCounter = 0
+function nextId() {
+  messageCounter += 1
+  return `m${messageCounter}`
+}
+
+export default function App() {
+  const [theme, setTheme] = useState<Theme>(preferredTheme)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [activeConversation, setActiveConversation] = useState<string | null>(null)
+  const [modelId, setModelId] = useState(DEFAULT_MODEL_ID)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [draft, setDraft] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+
+  const threadRef = useRef<HTMLDivElement>(null)
+  const replyTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+
+  // Keep the newest message in view.
+  useEffect(() => {
+    threadRef.current?.scrollTo({
+      top: threadRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [messages, isStreaming])
+
+  useEffect(() => () => window.clearTimeout(replyTimer.current), [])
+
+  function send(text: string) {
+    const content = text.trim()
+    if (!content || isStreaming) return
+
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId(), role: 'user', content, createdAt: Date.now() },
+    ])
+    setDraft('')
+    setIsStreaming(true)
+
+    // UI-only placeholder. Swap this block for the /response API call later.
+    replyTimer.current = window.setTimeout(() => {
+      const model = getModel(modelId)
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextId(),
+          role: 'assistant',
+          modelId,
+          createdAt: Date.now(),
+          content:
+            `This is a preview of how ${model.name} by ${model.provider} will answer. ` +
+            `The interface is not connected to the backend yet — once /response is wired up, ` +
+            `the real reply will stream into this bubble.`,
+        },
+      ])
+      setIsStreaming(false)
+    }, 1400)
+  }
+
+  function stop() {
+    window.clearTimeout(replyTimer.current)
+    setIsStreaming(false)
+  }
+
+  function newChat() {
+    stop()
+    setMessages([])
+    setDraft('')
+    setActiveConversation(null)
+  }
+
+  const isEmpty = messages.length === 0
+
+  return (
+    <div className={`app ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <Sidebar
+        open={sidebarOpen}
+        activeId={activeConversation}
+        onSelect={setActiveConversation}
+        onNewChat={newChat}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div
+        className="scrim"
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden={!sidebarOpen}
+      />
+
+      <main className="main">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="icon-btn sidebar-toggle"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open sidebar"
+            >
+              <SidebarIcon />
+            </button>
+            <ModelPicker selectedId={modelId} onSelect={setModelId} />
+          </div>
+
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle colour theme"
+          >
+            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </header>
+
+        <div className="thread" ref={threadRef}>
+          {isEmpty ? (
+            <div className="welcome">
+              <span className="welcome-glow" aria-hidden="true" />
+              <h1 className="welcome-title">What can I help you build?</h1>
+              <p className="welcome-sub">
+                Pick a model above, then start the conversation. You can switch models
+                at any point without losing the thread.
+              </p>
+
+              <div className="suggestions">
+                {SUGGESTIONS.map((item) => {
+                  const Icon = SUGGESTION_ICONS[item.icon]
+                  return (
+                    <button
+                      type="button"
+                      key={item.title}
+                      className="suggestion"
+                      onClick={() => send(item.body)}
+                    >
+                      <Icon className="suggestion-icon" />
+                      <span className="suggestion-title">{item.title}</span>
+                      <span className="suggestion-body">{item.body}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="messages">
+              {messages.map((message) => (
+                <ChatMessage key={message.id} message={message} />
+              ))}
+              {isStreaming && <TypingMessage modelId={modelId} />}
+            </div>
+          )}
+        </div>
+
+        <Composer
+          value={draft}
+          onChange={setDraft}
+          onSubmit={() => send(draft)}
+          onStop={stop}
+          isStreaming={isStreaming}
+          modelId={modelId}
+        />
+      </main>
+    </div>
+  )
+}
