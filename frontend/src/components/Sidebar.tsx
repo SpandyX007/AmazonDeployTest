@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { SAMPLE_CONVERSATIONS, getModel } from '../data/models'
+import { SAMPLE_CONVERSATIONS } from '../data/models'
 import { PlusIcon, SidebarIcon } from './Icons'
 
 interface Props {
@@ -58,7 +58,6 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
               </div>
 
               {items.map((conv) => {
-                const model = getModel(conv.modelId)
                 const index = ORDERED_IDS.indexOf(conv.id) + 1
 
                 return (
@@ -70,11 +69,7 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
                   >
                     <span className="conv-index">{String(index).padStart(2, '0')}</span>
                     <span className="conv-title">{conv.title}</span>
-                    <span
-                      className="conv-dot"
-                      style={{ '--hue': model.hue } as CSSProperties}
-                      title={model.name}
-                    />
+                    <span className="conv-dot" style={{ '--hue': conv.hue } as CSSProperties} />
                   </button>
                 )
               })}

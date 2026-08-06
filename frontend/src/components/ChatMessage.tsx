@@ -1,13 +1,22 @@
 import type { CSSProperties } from 'react'
-import { getModel } from '../data/models'
 import { CopyIcon, RetryIcon } from './Icons'
-import type { Message } from '../types'
+import type { Message, ModelStamp } from '../types'
+
+const UNKNOWN: ModelStamp = { name: 'Assistant', provider: '', initials: '··', hue: 0 }
 
 /**
  * Two deliberately different shapes: the user speaks in an inverted block,
  * the model answers in an article column with a byline running down the gutter.
  */
-export function ChatMessage({ message }: { message: Message }) {
+export function ChatMessage({
+  message,
+  onCopy,
+  onRetry,
+}: {
+  message: Message
+  onCopy?: (message: Message) => void
+  onRetry?: (message: Message) => void
+}) {
   if (message.role === 'user') {
     return (
       <article className="msg msg-user">
@@ -17,13 +26,10 @@ export function ChatMessage({ message }: { message: Message }) {
     )
   }
 
-  const model = getModel(message.modelId ?? '')
+  const model = message.model ?? UNKNOWN
 
   return (
-    <article
-      className="msg msg-assistant"
-      style={{ '--hue': model.hue } as CSSProperties}
-    >
+    <article className="msg msg-assistant" style={{ '--hue': model.hue } as CSSProperties}>
       <aside className="byline">
         <span className="byline-rule" />
         <span className="byline-name">{model.name}</span>
@@ -31,12 +37,22 @@ export function ChatMessage({ message }: { message: Message }) {
       </aside>
 
       <div className="msg-body">
-        <div className="msg-text">{message.content}</div>
+        <div className={`msg-text ${message.failed ? 'is-error' : ''}`}>{message.content}</div>
         <div className="msg-tools">
-          <button type="button" className="tool-btn" aria-label="Copy response">
+          <button
+            type="button"
+            className="tool-btn"
+            aria-label="Copy response"
+            onClick={() => onCopy?.(message)}
+          >
             <CopyIcon />
           </button>
-          <button type="button" className="tool-btn" aria-label="Regenerate response">
+          <button
+            type="button"
+            className="tool-btn"
+            aria-label="Regenerate response"
+            onClick={() => onRetry?.(message)}
+          >
             <RetryIcon />
           </button>
         </div>
@@ -45,14 +61,9 @@ export function ChatMessage({ message }: { message: Message }) {
   )
 }
 
-export function TypingMessage({ modelId }: { modelId: string }) {
-  const model = getModel(modelId)
-
+export function TypingMessage({ model }: { model: ModelStamp }) {
   return (
-    <article
-      className="msg msg-assistant"
-      style={{ '--hue': model.hue } as CSSProperties}
-    >
+    <article className="msg msg-assistant" style={{ '--hue': model.hue } as CSSProperties}>
       <aside className="byline">
         <span className="byline-rule" />
         <span className="byline-name">{model.name}</span>

@@ -1,29 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { MODELS, getModel } from '../data/models'
 import { ChevronIcon } from './Icons'
-import type { Model } from '../types'
+import type { Model, Provider } from '../types'
 
 interface Props {
-  selectedId: string
+  provider: Provider | null
+  selectedId: string | null
   onSelect: (id: string) => void
 }
 
-/** Groups models under their provider, preserving catalog order. */
-function groupByProvider(models: Model[]) {
-  const groups: { provider: string; models: Model[] }[] = []
-  for (const model of models) {
-    const existing = groups.find((g) => g.provider === model.provider)
-    if (existing) existing.models.push(model)
-    else groups.push({ provider: model.provider, models: [model] })
-  }
-  return groups
+const PLACEHOLDER: Model = {
+  id: '—',
+  name: 'No model',
+  tagline: '',
+  context: '—',
+  speed: 'Balanced',
 }
 
-export function ModelPicker({ selectedId, onSelect }: Props) {
+export function ModelPicker({ provider, selectedId, onSelect }: Props) {
   const [open, setOpen] = useState(false)
+  const [lastProviderId, setLastProviderId] = useState(provider?.id)
   const rootRef = useRef<HTMLDivElement>(null)
-  const selected = getModel(selectedId)
+
+  // Close when the provider changes out from under the menu.
+  if (provider?.id !== lastProviderId) {
+    setLastProviderId(provider?.id)
+    setOpen(false)
+  }
+
+  const models = provider?.models ?? []
+  const selected = models.find((m) => m.id === selectedId) ?? models[0] ?? PLACEHOLDER
+  const hue = provider?.hue ?? 0
+  const disabled = models.length === 0
 
   useEffect(() => {
     if (!open) return
@@ -50,13 +58,11 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
         className={`model-trigger ${open ? 'is-open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        <span
-          className="model-badge"
-          style={{ '--hue': selected.hue } as CSSProperties}
-        >
-          {selected.initials}
+        <span className="model-badge" style={{ '--hue': hue } as CSSProperties}>
+          {provider?.initials ?? '··'}
         </span>
         <span className="model-trigger-text">
           <span className="model-trigger-name">{selected.name}</span>
@@ -65,47 +71,41 @@ export function ModelPicker({ selectedId, onSelect }: Props) {
         <ChevronIcon className={`chevron ${open ? 'is-open' : ''}`} />
       </button>
 
-      {open && (
+      {open && provider && (
         <div className="model-menu" role="listbox" aria-label="Select a model">
           <div className="model-menu-head">
-            <span className="model-menu-title">Model index</span>
-            <span className="label">{MODELS.length} available</span>
+            <span className="model-menu-title">{provider.label} models</span>
+            <span className="label">{models.length} available</span>
           </div>
 
           <div className="model-menu-scroll">
-            {groupByProvider(MODELS).map((group) => (
-              <div className="model-group" key={group.provider}>
-                <div className="model-group-label label">{group.provider}</div>
-
-                {group.models.map((model) => {
-                  const isSelected = model.id === selectedId
-                  return (
-                    <button
-                      type="button"
-                      key={model.id}
-                      role="option"
-                      aria-selected={isSelected}
-                      className={`model-option ${isSelected ? 'is-selected' : ''}`}
-                      onClick={() => {
-                        onSelect(model.id)
-                        setOpen(false)
-                      }}
-                      style={{ '--hue': model.hue } as CSSProperties}
-                    >
-                      <span className="model-option-name">{model.name}</span>
-                      <span className="model-option-tagline">{model.tagline}</span>
-                      <span className="label model-option-spec">
-                        {model.context} · {model.speed}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            ))}
+            {models.map((model) => {
+              const isSelected = model.id === selected.id
+              return (
+                <button
+                  type="button"
+                  key={model.id}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`model-option ${isSelected ? 'is-selected' : ''}`}
+                  onClick={() => {
+                    onSelect(model.id)
+                    setOpen(false)
+                  }}
+                  style={{ '--hue': provider.hue } as CSSProperties}
+                >
+                  <span className="model-option-name">{model.name}</span>
+                  <span className="model-option-tagline">{model.tagline || model.id}</span>
+                  <span className="label model-option-spec">
+                    {model.context} · {model.speed}
+                  </span>
+                </button>
+              )
+            })}
           </div>
 
           <div className="model-menu-foot label">
-            Served over Groq · switching keeps the thread
+            Served over {provider.label} · switching keeps the thread
           </div>
         </div>
       )}

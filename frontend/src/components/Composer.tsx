@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { getModel } from '../data/models'
 import { AttachIcon, SendIcon, StopIcon } from './Icons'
 
 interface Props {
@@ -9,7 +8,9 @@ interface Props {
   onSubmit: () => void
   onStop: () => void
   isStreaming: boolean
-  modelId: string
+  modelName: string
+  /** True while no provider is ready — sending would fail. */
+  disabled?: boolean
 }
 
 const MAX_HEIGHT = 200
@@ -20,10 +21,10 @@ export function Composer({
   onSubmit,
   onStop,
   isStreaming,
-  modelId,
+  modelName,
+  disabled = false,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const model = getModel(modelId)
 
   // Grow the textarea with its content, up to a cap.
   useEffect(() => {
@@ -33,7 +34,7 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
   }, [value])
 
-  const canSend = value.trim().length > 0 && !isStreaming
+  const canSend = value.trim().length > 0 && !isStreaming && !disabled
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -60,7 +61,8 @@ export function Composer({
           className="composer-input"
           rows={1}
           value={value}
-          placeholder={`Ask ${model.name}`}
+          disabled={disabled}
+          placeholder={disabled ? 'No provider available' : `Ask ${modelName}`}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
         />

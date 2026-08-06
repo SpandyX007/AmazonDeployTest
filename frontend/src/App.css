@@ -354,6 +354,130 @@
   }
 }
 
+/* ---------- provider rail ---------- */
+
+/* The coarser choice, so it stays on the surface instead of inside a menu. */
+.provider-rail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 10px;
+  margin-left: 4px;
+  border-left: 1px solid var(--rule);
+}
+
+.provider-rail-label {
+  margin-right: 6px;
+  font-size: 9px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.provider-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition: color 0.16s var(--ease), border-color 0.18s var(--ease),
+    background 0.18s var(--ease);
+}
+
+.provider-chip:hover:not(:disabled) {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.provider-chip.is-selected {
+  border-color: var(--rule);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.provider-chip:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.provider-chip-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  background: hsl(var(--hue) var(--badge-s) var(--badge-l));
+  opacity: 0.4;
+  transition: opacity 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+
+.provider-chip.is-selected .provider-chip-dot {
+  opacity: 1;
+  box-shadow: 0 0 0 3px hsl(var(--hue) var(--badge-s) var(--badge-l) / 0.18);
+}
+
+.provider-chip:disabled .provider-chip-dot {
+  background: var(--ink-3);
+  opacity: 0.35;
+}
+
+.provider-chip-note {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.refresh-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.refresh-btn.is-busy svg {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- banner ---------- */
+
+.banner {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--accent-wash);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.banner button {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease);
+}
+
+.banner button:hover {
+  background: var(--invert-bg);
+  color: var(--invert-fg);
+}
+
 /* ---------- model picker ---------- */
 
 .model-picker {
@@ -370,10 +494,15 @@
   transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
 }
 
-.model-trigger:hover,
+.model-trigger:hover:not(:disabled),
 .model-trigger.is-open {
   border-color: var(--rule);
   background: var(--paper-2);
+}
+
+.model-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .model-trigger-text {
@@ -630,6 +759,17 @@
   letter-spacing: -0.005em;
   white-space: pre-wrap;
   color: var(--ink);
+}
+
+/* A failed turn reads as a notice, not as the model's prose. */
+.msg-text.is-error {
+  padding: 11px 14px;
+  border-left: 2px solid var(--accent-line);
+  background: var(--paper-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
 }
 
 .msg-tools {
@@ -919,6 +1059,18 @@ kbd {
   }
 
   .readout {
+    display: none;
+  }
+
+  /* The rail keeps its own scroll rather than squeezing the model picker. */
+  .provider-rail {
+    max-width: 42vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .provider-rail-label,
+  .provider-chip-note {
     display: none;
   }
 
