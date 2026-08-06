@@ -14,6 +14,9 @@ type Theme = 'light' | 'dark'
 
 const SELECTION_KEY = 'nexus.selection'
 
+/** How often a streaming turn repaints — roughly one animation frame. */
+const FLUSH_INTERVAL_MS = 60
+
 function preferredTheme(): Theme {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
@@ -178,6 +181,21 @@ export default function App() {
           return next
         })
 
+      // Repainting per token would re-parse the whole markdown tree each time,
+      // which grows quadratically on a long answer. Coalesce into frames.
+      let flushTimer: number | undefined
+      const cancelFlush = () => {
+        window.clearTimeout(flushTimer)
+        flushTimer = undefined
+      }
+      const scheduleFlush = () => {
+        if (flushTimer !== undefined) return
+        flushTimer = window.setTimeout(() => {
+          flushTimer = undefined
+          write(text)
+        }, FLUSH_INTERVAL_MS)
+      }
+
       try {
         await streamChat({
           selection: activeSelection,
@@ -185,13 +203,17 @@ export default function App() {
           signal: controller.signal,
           onToken: (chunk) => {
             text += chunk
-            write(text)
+            scheduleFlush()
           },
         })
+        cancelFlush()
+        write(text)
       } catch (error) {
+        cancelFlush()
         const err = error as Error
         // A user-initiated stop keeps whatever streamed in already.
-        if (err.name !== 'AbortError') write(text ? `${text}\n\n${err.message}` : err.message, true)
+        if (err.name === 'AbortError') write(text)
+        else write(text ? `${text}\n\n${err.message}` : err.message, true)
       } finally {
         abortRef.current = null
         setIsStreaming(false)

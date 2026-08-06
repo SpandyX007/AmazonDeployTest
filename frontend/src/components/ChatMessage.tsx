@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { Markdown } from './Markdown'
 import { CopyIcon, RetryIcon } from './Icons'
 import type { Message, ModelStamp } from '../types'
 
@@ -37,7 +38,14 @@ export function ChatMessage({
       </aside>
 
       <div className="msg-body">
-        <div className={`msg-text ${message.failed ? 'is-error' : ''}`}>{message.content}</div>
+        {/* A failure is a plain notice — never re-interpreted as markdown. */}
+        {message.failed ? (
+          <div className="msg-text is-error">{message.content}</div>
+        ) : (
+          <div className="msg-text">
+            <Markdown content={message.content} />
+          </div>
+        )}
         <div className="msg-tools">
           <button
             type="button"
