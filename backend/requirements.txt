@@ -3,4 +3,4 @@ uvicorn[standard]
 pydantic
 openai
 python-dotenv
-ollama>=0.5
+ollama
