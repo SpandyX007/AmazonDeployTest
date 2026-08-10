@@ -103,3 +103,38 @@ export function RetryIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function ArrowIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+export function LogoutIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15" />
+      <path d="M10 8l-4 4 4 4M6 12h9" />
+    </svg>
+  )
+}
+
+export function EyeIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+export function EyeOffIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M9.9 5.8A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.5 7.7A17 17 0 0 0 2.5 12S6 18.5 12 18.5c1 0 2-.2 2.9-.5" />
+      <path d="M10 10a2.8 2.8 0 0 0 4 4M3 3l18 18" />
+    </svg>
+  )
+}

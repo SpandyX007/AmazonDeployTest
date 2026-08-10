@@ -12,8 +12,10 @@ export interface Message {
   id: string
   role: Role
   content: string
-  /** Present on assistant messages. */
-  model?: ModelStamp
+  /** Which mind produced it. Stored as ids, not as a display stamp, so a
+   *  reloaded thread renders correctly once the catalog arrives. */
+  providerId?: string
+  modelId?: string
   /** Set when the turn failed — rendered as a notice instead of prose. */
   failed?: boolean
   createdAt: number
@@ -54,11 +56,50 @@ export interface Selection {
   model: string
 }
 
+/** The signed-in account. Never includes anything secret — the session token
+ *  lives in an httpOnly cookie this code cannot read. */
+export interface User {
+  id: string
+  name: string
+  email: string
+  initials: string
+  createdAt: string
+}
+
+/** One signed-in browser, from GET /api/auth/sessions. */
+export interface AuthSession {
+  id: string
+  current: boolean
+  createdAt: string
+  lastSeenAt: string
+  expiresAt: string
+  userAgent: string
+  ip: string
+}
+
+/** A thread as the sidebar knows it — no messages, just the spine. */
 export interface Conversation {
   id: string
   title: string
-  /** Hue used for the conversation dot. */
-  hue: number
-  /** Bucket used to group the sidebar list. */
-  group: string
+  provider: string
+  model: string
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** One stored turn, as the server returns it. */
+export interface StoredMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  provider: string
+  model: string
+  failed: boolean
+  createdAt: string
+}
+
+export interface ConversationDetail extends Conversation {
+  systemPrompt: string
+  messages: StoredMessage[]
 }

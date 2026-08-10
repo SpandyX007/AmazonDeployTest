@@ -1,23 +1,77 @@
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { SAMPLE_CONVERSATIONS } from '../data/models'
-import { PlusIcon, SidebarIcon } from './Icons'
+import { LogoutIcon, PlusIcon, SidebarIcon, TrashIcon } from './Icons'
+import type { Conversation, User } from '../types'
 
 interface Props {
   open: boolean
+  conversations: Conversation[]
   activeId: string | null
+  loading: boolean
+  user: User | null
   onSelect: (id: string) => void
   onNewChat: () => void
+  onDelete: (conversation: Conversation) => void
   onClose: () => void
+  onSignOut: () => void
+  onSignOutEverywhere: () => void
 }
 
-const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 days']
+const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 days', 'Previous 30 days', 'Older']
 
-/** Flat reading order, so the index numbers run 01..n across all groups. */
-const ORDERED_IDS = GROUP_ORDER.flatMap((group) =>
-  SAMPLE_CONVERSATIONS.filter((c) => c.group === group).map((c) => c.id),
-)
+function startOfDay(date: Date) {
+  const copy = new Date(date)
+  copy.setHours(0, 0, 0, 0)
+  return copy
+}
 
-export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props) {
+/** Buckets a thread by *local* calendar day — the server sends UTC instants. */
+function groupOf(isoTimestamp: string): string {
+  const days = Math.round(
+    (startOfDay(new Date()).getTime() - startOfDay(new Date(isoTimestamp)).getTime()) / 86_400_000,
+  )
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days <= 7) return 'Previous 7 days'
+  if (days <= 30) return 'Previous 30 days'
+  return 'Older'
+}
+
+/** Stable per-thread hue, so the dot colour survives a reload. */
+function hueOf(id: string): number {
+  let hash = 0
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) % 360
+  return hash
+}
+
+export function Sidebar({
+  open,
+  conversations,
+  activeId,
+  loading,
+  user,
+  onSelect,
+  onNewChat,
+  onDelete,
+  onClose,
+  onSignOut,
+  onSignOutEverywhere,
+}: Props) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const footRef = useRef<HTMLDivElement>(null)
+
+  // Dismiss the account menu on any click outside it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!footRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
+  const ordered = conversations.map((c) => c.id)
+
   return (
     <aside className={`sidebar ${open ? 'is-open' : ''}`}>
       <div className="sidebar-head">
@@ -30,12 +84,7 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
             <span className="label brand-sub">Multi-model</span>
           </span>
         </div>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={onClose}
-          aria-label="Collapse sidebar"
-        >
+        <button type="button" className="icon-btn" onClick={onClose} aria-label="Collapse sidebar">
           <SidebarIcon />
         </button>
       </div>
@@ -46,44 +95,93 @@ export function Sidebar({ open, activeId, onSelect, onNewChat, onClose }: Props)
       </button>
 
       <nav className="conv-list" aria-label="Chat history">
-        {GROUP_ORDER.map((group) => {
-          const items = SAMPLE_CONVERSATIONS.filter((c) => c.group === group)
-          if (items.length === 0) return null
+        {conversations.length === 0 ? (
+          <p className="conv-empty label">
+            {loading ? 'Loading your threads…' : 'No threads yet — ask something.'}
+          </p>
+        ) : (
+          GROUP_ORDER.map((group) => {
+            const items = conversations.filter((c) => groupOf(c.updatedAt) === group)
+            if (items.length === 0) return null
 
-          return (
-            <div className="conv-group" key={group}>
-              <div className="conv-group-label label">
-                <span>{group}</span>
-                <span className="conv-group-count">{items.length}</span>
-              </div>
+            return (
+              <div className="conv-group" key={group}>
+                <div className="conv-group-label label">
+                  <span>{group}</span>
+                  <span className="conv-group-count">{items.length}</span>
+                </div>
 
-              {items.map((conv) => {
-                const index = ORDERED_IDS.indexOf(conv.id) + 1
-
-                return (
-                  <button
-                    type="button"
-                    key={conv.id}
-                    className={`conv-item ${activeId === conv.id ? 'is-active' : ''}`}
-                    onClick={() => onSelect(conv.id)}
+                {items.map((conversation) => (
+                  <div
+                    className={`conv-item ${activeId === conversation.id ? 'is-active' : ''}`}
+                    key={conversation.id}
                   >
-                    <span className="conv-index">{String(index).padStart(2, '0')}</span>
-                    <span className="conv-title">{conv.title}</span>
-                    <span className="conv-dot" style={{ '--hue': conv.hue } as CSSProperties} />
-                  </button>
-                )
-              })}
-            </div>
-          )
-        })}
+                    <button
+                      type="button"
+                      className="conv-open"
+                      onClick={() => onSelect(conversation.id)}
+                    >
+                      <span className="conv-index">
+                        {String(ordered.indexOf(conversation.id) + 1).padStart(2, '0')}
+                      </span>
+                      <span className="conv-title">{conversation.title || 'New thread'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="conv-delete"
+                      onClick={() => onDelete(conversation)}
+                      aria-label={`Delete ${conversation.title}`}
+                      title="Delete thread"
+                    >
+                      <TrashIcon />
+                    </button>
+
+                    <span
+                      className="conv-dot"
+                      style={{ '--hue': hueOf(conversation.id) } as CSSProperties}
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          })
+        )}
       </nav>
 
-      <div className="sidebar-foot">
-        <button type="button" className="user-pill">
-          <span className="avatar avatar-user">S</span>
+      <div className="sidebar-foot" ref={footRef}>
+        {menuOpen && (
+          <div className="user-menu" role="menu">
+            <button type="button" className="user-menu-item" role="menuitem" onClick={onSignOut}>
+              <LogoutIcon />
+              <span>Sign out</span>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item"
+              role="menuitem"
+              onClick={onSignOutEverywhere}
+            >
+              <LogoutIcon />
+              <span>Sign out everywhere</span>
+            </button>
+            <p className="user-menu-note">
+              Signing out everywhere revokes every browser signed in to this account.
+            </p>
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="user-pill"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+        >
+          <span className="avatar avatar-user">{user?.initials ?? '··'}</span>
           <span className="user-meta">
-            <span className="user-name">Spandan</span>
-            <span className="label user-plan">Free plan</span>
+            <span className="user-name">{user?.name ?? 'Signed out'}</span>
+            <span className="label user-plan">{user?.email ?? ''}</span>
           </span>
         </button>
       </div>

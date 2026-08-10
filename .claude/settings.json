@@ -26,7 +26,16 @@
       "Bash(npm install *)",
       "Bash(node -p \"const p=require\\('./package.json'\\); JSON.stringify\\(p.dependencies,null,1\\)\")",
       "Bash(curl -s -N -X POST http://localhost:5173/api/chat/stream -H \"Content-Type: application/json\" -d '{\"provider\":\"groq\",\"model\":\"llama-3.1-8b-instant\",\"messages\":[{\"role\":\"user\",\"content\":\"List 2 great cricket spinners as markdown bullets, each with the name in bold followed by a colon and one short clause.\"}]}')",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(npm -v)",
+      "Bash(./.myapp/Scripts/pip.exe install *)",
+      "Bash(\"backend/.myapp/Scripts/python.exe\" \"C:/Users/Spandan/AppData/Local/Temp/claude/d--Python-projects-AWS-DEPLOYTEST/cf5e47ca-1b36-484c-9808-b282baa7047a/scratchpad/smoke.py\")",
+      "Bash(python -)",
+      "Bash(rm -f src/data/models.ts)",
+      "Bash(rmdir src/data)",
+      "Bash(\"backend/.myapp/Scripts/python.exe\" \"C:/Users/Spandan/AppData/Local/Temp/claude/d--Python-projects-AWS-DEPLOYTEST/cf5e47ca-1b36-484c-9808-b282baa7047a/scratchpad/chatflow.py\")",
+      "Bash(./.myapp/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8123)",
+      "Bash(VITE_API_TARGET=http://127.0.0.1:8123 npx vite --port 5199 --strictPort)"
     ]
   }
 }

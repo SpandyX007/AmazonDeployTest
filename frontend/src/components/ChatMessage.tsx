@@ -11,10 +11,13 @@ const UNKNOWN: ModelStamp = { name: 'Assistant', provider: '', initials: '··',
  */
 export function ChatMessage({
   message,
+  model = UNKNOWN,
   onCopy,
   onRetry,
 }: {
   message: Message
+  /** Resolved from the live catalog by the parent — see Chat.tsx. */
+  model?: ModelStamp
   onCopy?: (message: Message) => void
   onRetry?: (message: Message) => void
 }) {
@@ -26,8 +29,6 @@ export function ChatMessage({
       </article>
     )
   }
-
-  const model = message.model ?? UNKNOWN
 
   return (
     <article className="msg msg-assistant" style={{ '--hue': model.hue } as CSSProperties}>

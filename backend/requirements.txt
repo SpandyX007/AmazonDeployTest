@@ -1,6 +1,10 @@
 fastapi
 uvicorn[standard]
 pydantic
+email-validator
 openai
 python-dotenv
 ollama
+sqlalchemy
+bcrypt
+# Add for Postgres: psycopg[binary]
