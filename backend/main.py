@@ -13,6 +13,7 @@ Routing stays provider-agnostic: models are resolved through the registry in
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -29,14 +30,26 @@ if __package__ in (None, ""):
 
 from backend.auth import router as auth_router  # noqa: E402
 from backend.chat import router as chat_router  # noqa: E402
+from backend.config import JWT_SECRET_IS_EPHEMERAL  # noqa: E402
 from backend.conversations import router as conversations_router  # noqa: E402
 from backend.db import init_db  # noqa: E402
 from backend.providers import catalog  # noqa: E402
+
+log = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    if JWT_SECRET_IS_EPHEMERAL:
+        # Not fatal in dev, but it must never pass unnoticed: with a fresh key
+        # each boot, every access token issued before a restart stops verifying,
+        # and across two processes they never verify each other's at all.
+        log.warning(
+            "JWT_SECRET is not set — using a random key for this process only. "
+            "Tokens will not survive a restart, and multiple workers will "
+            "reject each other's tokens. Set JWT_SECRET in backend/.env."
+        )
     yield
 
 

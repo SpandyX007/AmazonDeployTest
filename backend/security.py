@@ -1,4 +1,6 @@
-"""Password hashing, session tokens, and a small brute-force brake.
+"""Password hashing, refresh-token generation, and a small brute-force brake.
+
+JWT minting and verification live next door in `tokens.py`.
 
 Nothing here touches the database or FastAPI — it is pure crypto plumbing, so
 it can be reasoned about (and tested) on its own.
@@ -62,15 +64,20 @@ def burn_password_time() -> None:
 # --- session tokens --------------------------------------------------------
 
 
-def new_session_token() -> str:
-    """256 bits of URL-safe randomness. This value only ever exists in the
-    cookie and in transit — the database stores its hash."""
+def new_refresh_token() -> str:
+    """256 bits of URL-safe randomness.
+
+    Unlike the access token this carries no claims and proves nothing by
+    itself — it is a lookup key, and all of its meaning lives in the row it
+    points at. The value exists only in the cookie and in transit; the database
+    stores its hash.
+    """
     return secrets.token_urlsafe(32)
 
 
 def hash_token(token: str) -> str:
-    # A session token is already high-entropy random, so a fast hash is right
-    # here: there is no dictionary to attack, and lookups happen per request.
+    # A refresh token is already high-entropy random, so a fast hash is right
+    # here: there is no dictionary to attack, and this runs on every refresh.
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 

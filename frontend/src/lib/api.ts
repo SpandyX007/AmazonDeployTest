@@ -4,6 +4,7 @@ import type {
   ConversationDetail,
   Selection,
   StoredMessage,
+  TokenResponse,
   User,
 } from '../types'
 
@@ -15,12 +16,15 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
 /**
- * The session cookie is httpOnly, so nothing here ever sees or sends a token
- * by hand — `credentials: 'include'` is the whole authentication story on this
- * side. It also means a cross-origin deployment needs ALLOWED_ORIGINS set on
- * the backend; browsers refuse to send credentials to a wildcard origin.
+ * Only /api/auth/* needs this — the refresh cookie is path-scoped, so the
+ * browser will not attach it to a chat request even when asked to. Setting it
+ * everywhere costs nothing and means a cross-origin deployment works without
+ * a second rule.
  */
 const CREDENTIALS: RequestCredentials = 'include'
+
+/** Refresh this far before `exp`, so a token cannot die mid-flight. */
+const REFRESH_SKEW_MS = 30_000
 
 export class ApiError extends Error {
   readonly status: number
@@ -32,16 +36,110 @@ export class ApiError extends Error {
   }
 }
 
+// --- the access token ------------------------------------------------------
+
 /**
- * Fires when the server rejects a call as unauthenticated — the cookie expired,
- * or the session was revoked from another device. AuthProvider registers a
- * handler that drops local state so the UI falls back to the login screen,
- * rather than every caller having to check for 401 itself.
+ * Deliberately a module variable and not localStorage.
+ *
+ * A token in storage is readable by any script that reaches the page, and it
+ * outlives the tab — so a token stolen once keeps working. Here it dies with
+ * the JavaScript context: closing the tab drops it, and nothing on disk can be
+ * scraped. The cost is that a page reload starts with no token, which is
+ * exactly what the refresh call below is for.
+ */
+let accessToken: string | null = null
+let accessExpiresAt = 0
+
+function adoptSession(session: TokenResponse): TokenResponse {
+  accessToken = session.accessToken
+  accessExpiresAt = Date.now() + session.expiresIn * 1000
+  return session
+}
+
+export function clearSession() {
+  accessToken = null
+  accessExpiresAt = 0
+}
+
+/**
+ * Fires when the server rejects a call and a refresh could not rescue it —
+ * the session was revoked, expired, or signed out from another device.
+ * AuthProvider registers a handler that drops local state.
  */
 let onUnauthorized: (() => void) | null = null
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
+}
+
+// --- refresh ---------------------------------------------------------------
+
+let refreshInFlight: Promise<TokenResponse | null> | null = null
+
+async function requestRefresh(): Promise<TokenResponse | null> {
+  const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+    method: 'POST',
+    credentials: CREDENTIALS,
+  })
+
+  if (!response.ok) {
+    clearSession()
+    return null
+  }
+
+  return adoptSession((await response.json()) as TokenResponse)
+}
+
+/**
+ * Trade the refresh cookie for a new access token.
+ *
+ * Single-flight on purpose: when a token expires, every request in flight
+ * fails at once, and each would otherwise start its own refresh. Since every
+ * refresh *rotates* the token, a burst of them would spend each other's
+ * successors and the server would read the pile-up as a stolen token being
+ * replayed. One shared promise means one rotation.
+ */
+export function refreshSession(): Promise<TokenResponse | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = requestRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+// --- the authenticated fetch ----------------------------------------------
+
+async function authorizedFetch(
+  path: string,
+  init: RequestInit = {},
+  mayRetry = true,
+): Promise<Response> {
+  // Proactive: renew a token that is about to expire rather than spend a
+  // round-trip finding out it did.
+  if (accessToken && Date.now() > accessExpiresAt - REFRESH_SKEW_MS) {
+    await refreshSession()
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    credentials: CREDENTIALS,
+    headers: {
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...init.headers,
+    },
+  })
+
+  // Reactive: the clock skewed, or the token died between the check and the
+  // server reading it. One refresh, one retry, then give up — a 401 that
+  // survives a fresh token is a real rejection, not a stale one.
+  if (response.status === 401 && mayRetry) {
+    const renewed = await refreshSession()
+    if (renewed) return authorizedFetch(path, init, false)
+  }
+
+  return response
 }
 
 async function failure(response: Response): Promise<string> {
@@ -57,20 +155,14 @@ async function failure(response: Response): Promise<string> {
 }
 
 interface RequestOptions extends RequestInit {
-  /** Skip the global sign-out handler — used by calls whose whole job is to
-   *  find out whether we are signed in. */
+  /** Skip the global sign-out handler — for calls whose whole job is to find
+   *  out whether we are signed in. */
   expect401?: boolean
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { expect401, body, headers, ...init } = options
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: CREDENTIALS,
-    headers: body ? { 'Content-Type': 'application/json', ...headers } : headers,
-    body,
-  })
+  const { expect401, ...init } = options
+  const response = await authorizedFetch(path, init)
 
   if (response.status === 401 && !expect401) onUnauthorized?.()
   if (!response.ok) throw new ApiError(await failure(response), response.status)
@@ -90,30 +182,43 @@ export function fetchCatalog(signal?: AbortSignal): Promise<Catalog> {
 
 // --- auth ------------------------------------------------------------------
 
-export function signup(input: { name: string; email: string; password: string }): Promise<User> {
-  return request<User>('/api/auth/signup', { method: 'POST', body: json(input) })
+export async function signup(input: {
+  name: string
+  email: string
+  password: string
+}): Promise<TokenResponse> {
+  return adoptSession(
+    await request<TokenResponse>('/api/auth/signup', { method: 'POST', body: json(input) }),
+  )
 }
 
-export function login(input: { email: string; password: string }): Promise<User> {
-  return request<User>('/api/auth/login', { method: 'POST', body: json(input) })
+export async function login(input: {
+  email: string
+  password: string
+}): Promise<TokenResponse> {
+  return adoptSession(
+    await request<TokenResponse>('/api/auth/login', { method: 'POST', body: json(input) }),
+  )
 }
 
-/** Resolves to null when there is no live session — the app's boot check. */
-export async function fetchMe(signal?: AbortSignal): Promise<User | null> {
+export function fetchMe(signal?: AbortSignal): Promise<User> {
+  return request<User>('/api/auth/me', { signal })
+}
+
+export async function logout(): Promise<void> {
   try {
-    return await request<User>('/api/auth/me', { signal, expect401: true })
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) return null
-    throw error
+    await request<void>('/api/auth/logout', { method: 'POST', expect401: true })
+  } finally {
+    clearSession()
   }
 }
 
-export function logout(): Promise<void> {
-  return request<void>('/api/auth/logout', { method: 'POST' })
-}
-
-export function logoutEverywhere(): Promise<void> {
-  return request<void>('/api/auth/logout-all', { method: 'POST' })
+export async function logoutEverywhere(): Promise<void> {
+  try {
+    await request<void>('/api/auth/logout-all', { method: 'POST', expect401: true })
+  } finally {
+    clearSession()
+  }
 }
 
 // --- conversations ---------------------------------------------------------
@@ -171,8 +276,11 @@ interface StreamOptions {
  * Streams one assistant turn.
  *
  * Only the new message goes up — history lives on the server, keyed to the
- * signed-in account. Resolves when the stream ends; rejects on transport or
- * provider errors.
+ * account named by the access token. Resolves when the stream ends; rejects on
+ * transport or provider errors.
+ *
+ * Retrying this after a refresh is safe: a request rejected at the auth check
+ * never reached the database, so nothing was written to replay.
  */
 export async function streamChat({
   selection,
@@ -184,10 +292,8 @@ export async function streamChat({
   onDone,
   signal,
 }: StreamOptions) {
-  const response = await fetch(`${API_BASE}/api/chat/stream`, {
+  const response = await authorizedFetch('/api/chat/stream', {
     method: 'POST',
-    credentials: CREDENTIALS,
-    headers: { 'Content-Type': 'application/json' },
     signal,
     body: json({
       provider: selection.provider,

@@ -78,14 +78,34 @@ class UserOut(Schema):
     created_at: UtcTime
 
 
+class TokenResponse(Schema):
+    """What sign-up, sign-in, and refresh all return.
+
+    The access token is in the body rather than a cookie because a bearer token
+    is meant to be attached deliberately, by the caller, on the requests that
+    need it — a cookie would be attached automatically to every request the
+    browser makes to this origin, which is how CSRF happens.
+    """
+
+    access_token: str
+    token_type: str = "Bearer"
+    #: Seconds until the access token dies. The client refreshes just before.
+    expires_in: int
+    user: UserOut
+
+
 class SessionOut(Schema):
-    """One signed-in browser, for the "where am I logged in" list."""
+    """One signed-in browser, for the "where am I logged in" list.
+
+    The id is the refresh *family* — a session is a chain of rotated tokens, so
+    the family is the only id that stays stable across refreshes.
+    """
 
     id: str
-    #: True for the session making this request.
+    #: True for the session that made this request.
     current: bool
-    created_at: UtcTime
-    last_seen_at: UtcTime
+    started_at: UtcTime
+    refreshed_at: UtcTime
     expires_at: UtcTime
     user_agent: str
     ip: str

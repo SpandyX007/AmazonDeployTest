@@ -42,15 +42,15 @@ const FEATURES = [
   },
   {
     title: 'Your threads, only yours',
-    body: 'Sessions ride in a cookie the page cannot read, and every query is scoped to the account that made it. Sign out from one device or from all of them.',
+    body: 'Every request carries a signed token naming your account, and every query is scoped to it. Sign out from one device or from all of them.',
   },
 ]
 
 const FLOW = [
   { step: 'Create an account', body: 'Email and a password. The password is hashed with bcrypt; it is never stored or logged in the clear.' },
-  { step: 'Get a session', body: 'The server issues a random token, keeps only its hash, and hands your browser an httpOnly cookie.' },
+  { step: 'Get a signed token', body: 'The server returns a JWT that expires in minutes, plus a long-lived renewal key kept out of reach of the page.' },
   { step: 'Start a thread', body: 'Your first message creates a conversation, titled from what you asked, owned by your account.' },
-  { step: 'Come back later', body: 'The cookie identifies you, the thread reloads from the database, and the model reads the same history you see.' },
+  { step: 'Come back later', body: 'The renewal key mints a fresh token, the thread reloads from the database, and the model reads the same history you see.' },
 ]
 
 export function Landing() {
@@ -159,8 +159,8 @@ export function Landing() {
             <b>kept</b>
           </div>
           <div className="lp-spec">
-            <em className="label">session</em>
-            <b>revocable</b>
+            <em className="label">tokens</em>
+            <b>rotating</b>
           </div>
         </section>
 

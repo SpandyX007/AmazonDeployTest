@@ -7,39 +7,39 @@ import { AuthContext, type AuthStatus, type AuthValue } from './auth-context'
 /**
  * Holds the signed-in account for the whole app.
  *
- * There is no token here to look after — the browser replays the httpOnly
- * cookie on its own. What this owns is the *answer* to "who is signed in",
- * which is asked once at boot and then kept in sync with the server.
+ * The access token itself lives in `lib/api.ts`, in a module variable rather
+ * than in React state — it changes on every refresh, and re-rendering the tree
+ * each time a background renewal lands would be noise. What this owns is the
+ * *answer* to "who is signed in".
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [status, setStatus] = useState<AuthStatus>('checking')
 
-  // Boot check: turn the cookie we cannot read into an account, or nothing.
+  // Boot: a page load starts with no access token in memory — by design. The
+  // refresh cookie is the only thing that survived, so trading it in is both
+  // how we get a token and how we find out whether anyone is signed in.
   useEffect(() => {
-    const controller = new AbortController()
-
     void (async () => {
       try {
-        const me = await api.fetchMe(controller.signal)
-        setUser(me)
-        setStatus(me ? 'authenticated' : 'anonymous')
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') return
+        const session = await api.refreshSession()
+        setUser(session?.user ?? null)
+        setStatus(session ? 'authenticated' : 'anonymous')
+      } catch {
         // Backend unreachable — treat as signed out rather than hanging on a
         // spinner forever; the chat screen surfaces the connection error.
         setUser(null)
         setStatus('anonymous')
       }
     })()
-
-    return () => controller.abort()
   }, [])
 
-  // A session can also end elsewhere — it expired, or another device hit
-  // "sign out everywhere". Any 401 from any call lands here.
+  // A session can also end elsewhere — the refresh chain was revoked, or
+  // another device hit "sign out everywhere". This fires only for a 401 that
+  // a refresh could not rescue, so it means the session is genuinely over.
   useEffect(() => {
     api.setUnauthorizedHandler(() => {
+      api.clearSession()
       setUser(null)
       setStatus('anonymous')
     })
@@ -52,13 +52,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = useCallback(
-    async (email: string, password: string) => adopt(await api.login({ email, password })),
+    async (email: string, password: string) => {
+      const session = await api.login({ email, password })
+      adopt(session.user)
+    },
     [adopt],
   )
 
   const signUp = useCallback(
-    async (name: string, email: string, password: string) =>
-      adopt(await api.signup({ name, email, password })),
+    async (name: string, email: string, password: string) => {
+      const session = await api.signup({ name, email, password })
+      adopt(session.user)
+    },
     [adopt],
   )
 

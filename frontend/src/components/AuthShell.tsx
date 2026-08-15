@@ -6,7 +6,7 @@ import { useTheme } from '../lib/theme'
 
 const ASSURANCES = [
   'Passwords are hashed with bcrypt — never stored in the clear.',
-  'Your session lives in a cookie this page cannot read.',
+  'Signed tokens expire in minutes and renew themselves quietly.',
   'Threads are scoped to your account and follow you between devices.',
 ]
 

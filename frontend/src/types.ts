@@ -56,8 +56,7 @@ export interface Selection {
   model: string
 }
 
-/** The signed-in account. Never includes anything secret — the session token
- *  lives in an httpOnly cookie this code cannot read. */
+/** The signed-in account. Carries nothing secret. */
 export interface User {
   id: string
   name: string
@@ -66,12 +65,24 @@ export interface User {
   createdAt: string
 }
 
-/** One signed-in browser, from GET /api/auth/sessions. */
+/** What sign-up, sign-in, and refresh all return. */
+export interface TokenResponse {
+  /** A JWT. Held in memory only — see lib/api.ts. */
+  accessToken: string
+  tokenType: string
+  /** Seconds until it expires; the client renews just before. */
+  expiresIn: number
+  user: User
+}
+
+/** One live sign-in, from GET /api/auth/sessions. The id is the refresh
+ *  family — a session is a chain of rotated tokens, and the family is the
+ *  only id that stays stable across refreshes. */
 export interface AuthSession {
   id: string
   current: boolean
-  createdAt: string
-  lastSeenAt: string
+  startedAt: string
+  refreshedAt: string
   expiresAt: string
   userAgent: string
   ip: string

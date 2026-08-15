@@ -51,16 +51,27 @@ def count_messages(db: Session, conversation_id: str) -> int:
 
 def list_summaries(db: Session, user: User) -> list[ConversationOut]:
     """The sidebar, newest thread first — one query, counts included."""
-    counts = (
-        select(Message.conversation_id.label("cid"), func.count(Message.id).label("n"))
+    activity = (
+        select(
+            Message.conversation_id.label("cid"),
+            func.count(Message.id).label("n"),
+            func.max(Message.id).label("last_id"),
+        )
         .group_by(Message.conversation_id)
         .subquery()
     )
     rows = db.execute(
-        select(Conversation, func.coalesce(counts.c.n, 0))
-        .outerjoin(counts, counts.c.cid == Conversation.id)
+        select(Conversation, func.coalesce(activity.c.n, 0))
+        .outerjoin(activity, activity.c.cid == Conversation.id)
         .where(Conversation.user_id == user.id)
-        .order_by(Conversation.updated_at.desc())
+        # Two threads touched inside the same clock tick carry the same
+        # `updated_at`, and SQL leaves a tie in whatever order it likes. Message
+        # ids are a strictly increasing sequence, so the newest one breaks the
+        # tie the way a reader would expect.
+        .order_by(
+            Conversation.updated_at.desc(),
+            func.coalesce(activity.c.last_id, 0).desc(),
+        )
     ).all()
     return [summarise(conversation, count) for conversation, count in rows]
 

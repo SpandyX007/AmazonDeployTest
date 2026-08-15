@@ -7,4 +7,5 @@ python-dotenv
 ollama
 sqlalchemy
 bcrypt
+pyjwt
 # Add for Postgres: psycopg[binary]

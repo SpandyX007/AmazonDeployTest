@@ -1,6 +1,6 @@
 """The four tables behind accounts and per-user chat memory.
 
-    User ──< AuthSession        one row per signed-in browser
+    User ──< RefreshToken       the rotating chain behind one sign-in
      └───< Conversation ──< Message      the thread, and its memory
 
 Everything below hangs off `user_id`, which is what makes one person's threads
@@ -34,7 +34,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    sessions: Mapped[list[AuthSession]] = relationship(
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     conversations: Mapped[list[Conversation]] = relationship(
@@ -51,36 +51,61 @@ class User(Base):
         return (parts[0][:1] + parts[-1][:1]).upper()
 
 
-class AuthSession(Base):
-    """One signed-in browser.
+class RefreshToken(Base):
+    """One rung on a session's ladder.
 
-    The cookie carries a random token; only its SHA-256 is stored here, so a
-    database leak yields no usable sessions. Rows are kept (rather than issuing
-    self-contained JWTs) precisely so that logout can *revoke* — a token stops
-    working the instant this row is marked, not whenever it happens to expire.
+    Access tokens are JWTs and are never stored — they are believed on sight,
+    because the signature is the proof. This table holds the other half: the
+    long-lived, *revocable* credential that mints them.
+
+    Two shapes worth noticing.
+
+    It is an opaque random string, not a JWT. A refresh must consult the
+    database anyway — is this revoked? was it already spent? — and once you are
+    reading a row, a self-validating token buys nothing. Only the SHA-256 is
+    stored, so a database leak hands over no working sessions.
+
+    And it rotates. Every refresh spends the current token (`used_at`) and
+    issues a successor in the same `family_id`, so one sign-in is a chain, not a
+    single long-lived key. If a *spent* token is ever presented again, a copy of
+    it exists somewhere it should not — and the whole family is burned.
     """
 
-    __tablename__ = "auth_sessions"
+    __tablename__ = "refresh_tokens"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    #: Shared by every rung of one sign-in — this is what "a session" means now.
+    family_id: Mapped[str] = mapped_column(String(32), index=True)
+    #: When the chain began. Copied forward on rotation so the "signed-in
+    #: devices" list can show session age without walking back up the chain.
+    family_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    #: Set when this rung is exchanged for the next one. A second presentation
+    #: after this is set is the replay signal.
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     #: Context for the "signed-in devices" list — never used for authorisation.
     user_agent: Mapped[str] = mapped_column(String(300), default="")
     ip: Mapped[str] = mapped_column(String(45), default="")
 
-    user: Mapped[User] = relationship(back_populates="sessions")
+    user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
     def is_live(self, now: datetime | None = None) -> bool:
         now = now or utcnow()
         expires = as_utc(self.expires_at)
-        return self.revoked_at is None and expires is not None and expires > now
+        return (
+            self.revoked_at is None
+            and self.used_at is None
+            and expires is not None
+            and expires > now
+        )
 
 
 class Conversation(Base):
