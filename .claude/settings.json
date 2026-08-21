@@ -40,7 +40,8 @@
       "Bash(JWT_SECRET=dev-verification-secret ./.myapp/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8123)",
       "Bash(echo \"exit: $?\")",
       "Bash(curl -s -m 15 -w \"\\\\nHTTP %{http_code}\\\\n\" http://16.171.171.230/)",
-      "Bash(curl -s -m 15 -w \"\\\\nHTTP %{http_code}\\\\n\" http://16.171.171.230/api/providers)"
+      "Bash(curl -s -m 15 -w \"\\\\nHTTP %{http_code}\\\\n\" http://16.171.171.230/api/providers)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

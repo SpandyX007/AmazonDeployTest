@@ -1,2 +1,3 @@
 *.csv
 poc_dep_test/
+.*/
