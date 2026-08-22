@@ -1,0 +1,4 @@
+.myapp/
+.env
+__pycache__/
+.git/
