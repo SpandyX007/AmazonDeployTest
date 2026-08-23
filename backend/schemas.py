@@ -76,6 +76,9 @@ class UserOut(Schema):
     #: Derived on the model — the avatar badge in the UI.
     initials: str
     created_at: UtcTime
+    #: Snapshot at the time of the call; `done` events carry fresher values.
+    credit_balance: int = 0
+    is_premium: bool = False
 
 
 class TokenResponse(Schema):
@@ -182,7 +185,85 @@ class ChatTurnRequest(Schema):
         return self
 
 
+class TurnUsage(Schema):
+    """What one turn cost, as reported back on `done` and in `ChatReply`."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    #: True when the vendor sent no count and the numbers are ours.
+    estimated: bool
+    credits_charged: int
+    #: The balance after the charge — the client updates its meter from this
+    #: rather than re-fetching.
+    balance: int
+
+
 class ChatReply(Schema):
     conversation_id: str
     title: str
     message: MessageOut
+    usage: TurnUsage | None = None
+
+
+# --- billing ---------------------------------------------------------------
+
+
+class PackOut(Schema):
+    """The one thing on sale."""
+
+    price_inr: int
+    credits: int
+
+
+class UpiOut(Schema):
+    id: str
+    payee_name: str
+    #: `upi://pay?...` — opens the payer's UPI app directly on a phone.
+    uri: str
+    #: Where to fetch the QR image from.
+    qr_url: str
+
+
+class PaymentOut(Schema):
+    id: int
+    amount_inr: int
+    credits: int
+    reference: str
+    note: str
+    status: Literal["pending", "approved", "rejected"]
+    created_at: UtcTime
+    resolved_at: UtcTime | None
+    resolution_note: str
+
+
+class BillingOut(Schema):
+    """Everything the paywall and the credit meter need, in one call."""
+
+    balance: int
+    is_premium: bool
+    free_signup_credits: int
+    pack: PackOut
+    #: Absent when the owner has not configured UPI_ID — the UI then says
+    #: "not available" instead of showing an empty QR.
+    upi: UpiOut | None
+    pending_payment: PaymentOut | None
+
+
+class CreditEntryOut(Schema):
+    id: int
+    kind: Literal["signup", "usage", "payment", "adjustment"]
+    delta: int
+    balance_after: int
+    provider: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    estimated: bool
+    conversation_id: str | None
+    note: str
+    created_at: UtcTime
+
+
+class PaymentSubmitRequest(Schema):
+    reference: str = Field(min_length=6, max_length=80)
+    note: str = Field(default="", max_length=200)

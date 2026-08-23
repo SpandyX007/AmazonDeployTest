@@ -6,7 +6,16 @@ import os
 import time
 from typing import Any, Iterable, Iterator
 
-from .base import ChatMessage, ModelInfo, Provider, ProviderError, ProviderStatus, register
+from .base import (
+    ChatMessage,
+    ModelInfo,
+    Provider,
+    ProviderError,
+    ProviderStatus,
+    StreamItem,
+    Usage,
+    register,
+)
 
 #: Discovery hits the local daemon, so cache it briefly rather than per request.
 _CACHE_TTL_SECONDS = 5.0
@@ -124,33 +133,64 @@ class OllamaProvider(Provider):
         except ProviderError:
             return []
 
-    def stream(self, model: str, messages: Iterable[ChatMessage]) -> Iterator[str]:
+    def stream(
+        self,
+        model: str,
+        messages: Iterable[ChatMessage],
+        *,
+        max_output_tokens: int | None = None,
+    ) -> Iterator[StreamItem]:
         payload = [{"role": m.role, "content": m.content} for m in messages]
+        options = {"num_predict": max_output_tokens} if max_output_tokens else {}
 
         # Reasoning models are far slower with thinking on — roughly 20s versus
         # 1s for a 4B qwen3.5 — and this endpoint discards the thinking text
         # anyway, so it buys nothing. Older daemons reject the flag; those
         # models fall back once and are remembered.
         try:
-            yield from self._emit(model, payload, suppress_thinking=model not in self._no_think)
+            yield from self._emit(
+                model, payload, options, suppress_thinking=model not in self._no_think
+            )
         except _ThinkUnsupported:
             self._no_think.add(model)
-            yield from self._emit(model, payload, suppress_thinking=False)
+            yield from self._emit(model, payload, options, suppress_thinking=False)
 
-    def _emit(self, model: str, payload: list[dict], suppress_thinking: bool) -> Iterator[str]:
-        options = {"think": False} if suppress_thinking else {}
+    def _emit(
+        self, model: str, payload: list[dict], options: dict, suppress_thinking: bool
+    ) -> Iterator[StreamItem]:
+        kwargs: dict[str, Any] = {"think": False} if suppress_thinking else {}
+        if options:
+            kwargs["options"] = options
         emitted = False
+        usage: Usage | None = None
         try:
             # With stream=True the client is lazy: the request is issued on the
             # first iteration, so errors surface here rather than at the call.
-            for chunk in self.client().chat(model=model, messages=payload, stream=True, **options):
+            for chunk in self.client().chat(model=model, messages=payload, stream=True, **kwargs):
                 message = _attr(chunk, "message")
                 text = _attr(message, "content") if message else None
                 if text:
                     emitted = True
                     yield text
+
+                # The final chunk (`done: true`) carries the daemon's own
+                # counts. `prompt_eval_count` is omitted when the whole prompt
+                # was served from the KV cache — in that case the prompt half
+                # is unknown here and the caller's estimate fills it in.
+                if _attr(chunk, "done"):
+                    prompt = _attr(chunk, "prompt_eval_count")
+                    completion = _attr(chunk, "eval_count")
+                    if completion is not None:
+                        usage = Usage(
+                            prompt_tokens=int(prompt or 0),
+                            completion_tokens=int(completion),
+                            estimated=prompt is None,
+                        )
         except Exception as exc:
             # Only safe to retry while nothing has reached the client yet.
             if suppress_thinking and not emitted and _rejects_think(exc):
                 raise _ThinkUnsupported from exc
             raise ProviderError(str(exc)) from exc
+
+        if usage is not None:
+            yield usage

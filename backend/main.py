@@ -19,7 +19,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Loaded as a top-level module (`uvicorn main:app` from backend/) rather than as
@@ -28,12 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from backend.auth import optional_user  # noqa: E402
 from backend.auth import router as auth_router  # noqa: E402
+from backend.billing import router as billing_router  # noqa: E402
 from backend.chat import router as chat_router  # noqa: E402
-from backend.config import JWT_SECRET_IS_EPHEMERAL  # noqa: E402
+from backend.config import JWT_SECRET_IS_EPHEMERAL, UPI_ID  # noqa: E402
 from backend.conversations import router as conversations_router  # noqa: E402
 from backend.db import init_db  # noqa: E402
-from backend.providers import catalog  # noqa: E402
+from backend.models import User  # noqa: E402
+from backend.pricing import policy_for  # noqa: E402
+from backend.providers import list_providers  # noqa: E402
 
 log = logging.getLogger("uvicorn.error")
 
@@ -49,6 +53,11 @@ async def lifespan(_app: FastAPI):
             "JWT_SECRET is not set — using a random key for this process only. "
             "Tokens will not survive a restart, and multiple workers will "
             "reject each other's tokens. Set JWT_SECRET in backend/.env."
+        )
+    if not UPI_ID:
+        log.warning(
+            "UPI_ID is not set — premium models stay locked and nobody can top up. "
+            "Set UPI_ID (and UPI_PAYEE_NAME) in backend/.env to turn the paywall on."
         )
     yield
 
@@ -74,6 +83,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(conversations_router)
 app.include_router(chat_router)
+app.include_router(billing_router)
 
 
 @app.get("/")
@@ -81,19 +91,44 @@ async def index():
     return {"status": "The service is live"}
 
 
+def _priced_catalog(user: User | None) -> list[dict]:
+    """The provider catalog with each model's tier and, for this caller,
+    whether it is locked. Locked models are *listed*, not hidden — a model you
+    can see but cannot use is an upgrade prompt; one you cannot see is nothing."""
+    premium_ok = bool(user and user.is_premium)
+    entries = []
+    for provider in list_providers():
+        entry = provider.describe()
+        if entry["models"]:
+            # `describe()` serialised the catalog once; pair the dicts back up
+            # with their ModelInfo by id to price them.
+            by_id = {m.id: m for m in provider.models()}
+            for model in entry["models"]:
+                info = by_id.get(model["id"])
+                policy = policy_for(provider.id, info) if info else None
+                model.update(policy.as_dict() if policy else {"tier": "free"})
+                model["locked"] = bool(policy and policy.premium and not premium_ok)
+        entries.append(entry)
+    return entries
+
+
 @app.get("/api/providers")
-async def providers():
+def providers(user: User | None = Depends(optional_user)):
     """Provider + model catalog, with a sensible default selection.
 
-    Left unauthenticated on purpose: the landing page uses it to show how many
-    models are online, and it exposes no user data.
+    Works signed out (the landing page counts models with it) and exposes no
+    user data; signed in, it additionally says which models *this* account
+    may use. The default selection is never a locked model.
     """
-    entries = catalog()
-    default = next((p for p in entries if p["available"] and p["models"]), None)
+    entries = _priced_catalog(user)
 
-    return {
-        "providers": entries,
-        "default": (
-            {"provider": default["id"], "model": default["models"][0]["id"]} if default else None
-        ),
-    }
+    default = None
+    for entry in entries:
+        if not entry["available"]:
+            continue
+        model = next((m for m in entry["models"] if not m["locked"]), None)
+        if model:
+            default = {"provider": entry["id"], "model": model["id"]}
+            break
+
+    return {"providers": entries, "default": default}

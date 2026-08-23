@@ -39,6 +39,7 @@ from backend.config import (
     REFRESH_REUSE_GRACE_SECONDS,
     REFRESH_TOKEN_TTL_DAYS,
 )
+from backend.credits import grant_signup_credits
 from backend.db import as_utc, get_db, utcnow
 from backend.models import RefreshToken, User
 from backend.schemas import LoginRequest, SessionOut, SignupRequest, TokenResponse, UserOut
@@ -107,6 +108,23 @@ def current_user(
         raise _unauthorised("That account no longer exists")
 
     return user
+
+
+def optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """`current_user` for routes that work signed out but do more signed in.
+
+    A bad token is treated as no token: the route answers the anonymous way
+    rather than failing, because nothing behind it is private.
+    """
+    if credentials is None:
+        return None
+    try:
+        return db.get(User, read_access_token(credentials.credentials))
+    except InvalidToken:
+        return None
 
 
 # --- refresh cookie plumbing ------------------------------------------------
@@ -250,6 +268,10 @@ def signup(
         # Also catches two simultaneous signups racing on the same address.
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "That email already has an account")
+
+    # The free allowance — written as a ledger row, not a column default, so
+    # the account's history starts with where its first credits came from.
+    grant_signup_credits(db, user)
 
     return _issue(db, user, request, response)
 

@@ -1,10 +1,14 @@
 import type {
+  Billing,
   Catalog,
   Conversation,
   ConversationDetail,
+  CreditEntry,
+  PaymentRequest,
   Selection,
   StoredMessage,
   TokenResponse,
+  TurnUsage,
   User,
 } from '../types'
 
@@ -26,13 +30,26 @@ const CREDENTIALS: RequestCredentials = 'include'
 /** Refresh this far before `exp`, so a token cannot die mid-flight. */
 const REFRESH_SKEW_MS = 30_000
 
+/**
+ * Machine-readable refusals the UI reacts to specifically — a paywall for one,
+ * an upgrade prompt for the other. Anything else is shown as plain text.
+ */
+export type ApiReason = 'insufficient_credits' | 'model_locked'
+
 export class ApiError extends Error {
   readonly status: number
+  readonly reason: ApiReason | null
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, reason: ApiReason | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.reason = reason
+  }
+
+  /** True for the two errors that mean "pay", not "something broke". */
+  get isPaywall(): boolean {
+    return this.reason === 'insufficient_credits' || this.reason === 'model_locked'
   }
 }
 
@@ -142,16 +159,23 @@ async function authorizedFetch(
   return response
 }
 
-async function failure(response: Response): Promise<string> {
+async function failure(response: Response): Promise<ApiError> {
   try {
     const body = await response.json()
-    if (typeof body?.detail === 'string') return body.detail
+    const detail = body?.detail
+    if (typeof detail === 'string') return new ApiError(detail, response.status)
     // FastAPI validation errors arrive as a list of field problems.
-    if (Array.isArray(body?.detail) && body.detail[0]?.msg) return body.detail[0].msg
+    if (Array.isArray(detail) && detail[0]?.msg) return new ApiError(detail[0].msg, response.status)
+    // Our own structured refusals: { reason, message, ...context }.
+    if (detail && typeof detail === 'object' && typeof detail.message === 'string') {
+      const reason = detail.reason
+      const known = reason === 'insufficient_credits' || reason === 'model_locked'
+      return new ApiError(detail.message, response.status, known ? reason : null)
+    }
   } catch {
     /* fall through to the status line */
   }
-  return `${response.status} ${response.statusText}`
+  return new ApiError(`${response.status} ${response.statusText}`, response.status)
 }
 
 interface RequestOptions extends RequestInit {
@@ -165,7 +189,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const response = await authorizedFetch(path, init)
 
   if (response.status === 401 && !expect401) onUnauthorized?.()
-  if (!response.ok) throw new ApiError(await failure(response), response.status)
+  if (!response.ok) throw await failure(response)
 
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -242,6 +266,29 @@ export function deleteConversation(id: string): Promise<void> {
   return request<void>(`/api/conversations/${id}`, { method: 'DELETE' })
 }
 
+// --- billing ---------------------------------------------------------------
+
+export function fetchBilling(signal?: AbortSignal): Promise<Billing> {
+  return request<Billing>('/api/billing/me', { signal })
+}
+
+export function fetchCreditHistory(limit = 50, signal?: AbortSignal): Promise<CreditEntry[]> {
+  return request<CreditEntry[]>(`/api/billing/history?limit=${limit}`, { signal })
+}
+
+/** "I paid the QR" — records the claim; the owner verifies it by hand. */
+export function submitPayment(input: { reference: string; note?: string }): Promise<PaymentRequest> {
+  return request<PaymentRequest>('/api/billing/payments', {
+    method: 'POST',
+    body: json({ reference: input.reference, note: input.note ?? '' }),
+  })
+}
+
+/** The QR image is public (an <img> cannot carry a bearer token). */
+export function qrImageUrl(path: string): string {
+  return `${API_BASE}${path}`
+}
+
 // --- chat ------------------------------------------------------------------
 
 /** Sent once, before any token — carries the thread id for a brand-new chat. */
@@ -252,10 +299,12 @@ export interface StreamMeta {
   userMessage: StoredMessage | null
 }
 
-/** Sent last — the assistant turn as it was stored. */
+/** Sent last — the assistant turn as it was stored, and what it cost. */
 export interface StreamDone {
   conversationId: string
   message: StoredMessage | null
+  /** Null when nothing was charged (the request never reached the vendor). */
+  usage: TurnUsage | null
 }
 
 interface StreamOptions {
@@ -305,7 +354,7 @@ export async function streamChat({
   })
 
   if (response.status === 401) onUnauthorized?.()
-  if (!response.ok) throw new ApiError(await failure(response), response.status)
+  if (!response.ok) throw await failure(response)
   if (!response.body) throw new ApiError('The server returned an empty stream', 502)
 
   const reader = response.body.getReader()

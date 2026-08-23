@@ -1,7 +1,9 @@
-"""The four tables behind accounts and per-user chat memory.
+"""The tables behind accounts, per-user chat memory, and the credit balance.
 
     User ──< RefreshToken       the rotating chain behind one sign-in
-     └───< Conversation ──< Message      the thread, and its memory
+     ├───< Conversation ──< Message      the thread, and its memory
+     ├───< CreditEntry         every movement of the balance, signed
+     └───< PaymentRequest      "I paid the QR — here is the reference"
 
 Everything below hangs off `user_id`, which is what makes one person's threads
 invisible to everyone else: queries are always filtered by the account resolved
@@ -34,10 +36,24 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
+    #: Cached sum of `credit_entries.delta`. The ledger is the truth; this is
+    #: what the hot path reads. It may dip below zero: a turn's cost is only
+    #: known once it ends, and the last turn of a balance is allowed to finish.
+    credit_balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Unlocks premium-tier models. Flipped by an approved payment.
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    premium_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     conversations: Mapped[list[Conversation]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    credit_entries: Mapped[list[CreditEntry]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    payment_requests: Mapped[list[PaymentRequest]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -163,3 +179,87 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class CreditEntry(Base):
+    """One signed movement of a balance — the ledger.
+
+    Append-only. A mistake is corrected by a new row with the opposite sign,
+    never by editing this one, so the history always explains the balance. A
+    usage row also records what was bought: which model, how many tokens, and
+    whether the count came from the vendor or from our own estimate.
+    """
+
+    __tablename__ = "credit_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    #: signup | usage | payment | adjustment
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    #: Negative for a charge, positive for a grant.
+    delta: Mapped[int] = mapped_column(Integer)
+    #: The cached balance right after this row applied — lets the history
+    #: screen show a running total without summing from the beginning.
+    balance_after: Mapped[int] = mapped_column(Integer)
+
+    # -- usage rows only --
+    provider: Mapped[str] = mapped_column(String(40), default="")
+    model: Mapped[str] = mapped_column(String(120), default="")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    #: The vendor reported nothing and the count is ours.
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), default=None
+    )
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), default=None
+    )
+
+    # -- payment rows only --
+    payment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("payment_requests.id", ondelete="SET NULL"), default=None
+    )
+
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="credit_entries")
+
+
+class PaymentRequest(Base):
+    """A claim that the QR was paid, waiting for the owner to agree.
+
+    There is no gateway, so nothing here is proof. The user scans the UPI QR,
+    pays, and types in the transaction reference their app shows; the owner
+    checks that reference against their own bank statement and approves. The
+    reference is unique across all users so one screenshot cannot be submitted
+    twice, and `credits`/`amount` are copied in at submission time so a later
+    price change does not rewrite what was owed.
+    """
+
+    __tablename__ = "payment_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    amount_inr: Mapped[int] = mapped_column(Integer)
+    credits: Mapped[int] = mapped_column(Integer)
+    #: UPI transaction id / UTR as the payer's app shows it. Normalised
+    #: uppercase, no spaces.
+    reference: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    #: Anything the payer wants to add — the name on their UPI account, say.
+    note: Mapped[str] = mapped_column(String(200), default="")
+    #: pending | approved | rejected
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    #: Why it was rejected, or who approved it.
+    resolution_note: Mapped[str] = mapped_column(String(200), default="")
+
+    user: Mapped[User] = relationship(back_populates="payment_requests")
