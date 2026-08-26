@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 
@@ -43,11 +44,74 @@ def _csv(name: str, default: str = "") -> frozenset[str]:
     return frozenset(item.strip() for item in value.split(",") if item.strip())
 
 
-# --- storage ---------------------------------------------------------------
+# --- storage: AWS RDS PostgreSQL --------------------------------------------
+#
+# One engine everywhere. Dev and prod both talk to Postgres, so the schema that
+# boots on a laptop is the schema that boots on the box — there is no SQLite
+# fallback to paper over a dialect difference until it is too late to notice.
+#
+# Either hand over a full DATABASE_URL, or the parts and the URL is assembled
+# here. The part names match the RDS PoC's .env so the same values carry over.
 
-#: SQLite by default so the app boots with zero setup. Point this at
-#: postgresql+psycopg://user:pass@host/db in production — nothing else changes.
-DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{(BACKEND_DIR / 'app.db').as_posix()}"
+DB_HOST = os.getenv("DB_HOST", "").strip()
+DB_PORT = _number("DB_PORT", 5432)
+#: A fresh RDS instance ships with only the default `postgres` database;
+#: `backend.db.init_db` creates this one on first boot if it is missing.
+DB_NAME = os.getenv("DB_NAME", "").strip() or "nexus"
+DB_USER = os.getenv("DB_USER", "").strip()
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+
+
+def _database_url() -> str:
+    explicit = os.getenv("DATABASE_URL", "").strip()
+    if explicit:
+        return explicit
+    if not (DB_HOST and DB_USER):
+        raise RuntimeError(
+            "No database configured: set DB_HOST, DB_USER and DB_PASSWORD "
+            "(or a full DATABASE_URL) in backend/.env — see backend/.env.example."
+        )
+    # quote_plus: a password containing '@' or '/' must not be read as URL syntax.
+    return (
+        f"postgresql+psycopg://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}"
+        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
+
+
+DATABASE_URL = _database_url()
+
+#: RDS enforces TLS (`rds.force_ssl`). `verify-full` goes further and checks
+#: the server's certificate against Amazon's CA bundle, so a hijacked DNS name
+#: cannot point us at a look-alike host. The bundle is public — it ships in the
+#: repo and the image. Set DB_SSLMODE=disable only for a Postgres on localhost.
+DB_SSL_ROOT_CERT = Path(os.getenv("DB_SSL_ROOT_CERT", "").strip() or "global-bundle.pem")
+if not DB_SSL_ROOT_CERT.is_absolute():
+    DB_SSL_ROOT_CERT = BACKEND_DIR / DB_SSL_ROOT_CERT
+DB_SSLMODE = os.getenv("DB_SSLMODE", "").strip().lower() or (
+    "verify-full" if DB_SSL_ROOT_CERT.is_file() else "require"
+)
+
+#: Handed to psycopg as libpq parameters. `connect_timeout` keeps a wrong
+#: security group from hanging the boot: it fails in seconds, with a message.
+DB_CONNECT_ARGS: dict[str, object] = {
+    "sslmode": DB_SSLMODE,
+    "connect_timeout": _number("DB_CONNECT_TIMEOUT", 10),
+}
+if DB_SSLMODE in {"verify-ca", "verify-full"}:
+    if not DB_SSL_ROOT_CERT.is_file():
+        raise RuntimeError(
+            f"DB_SSLMODE={DB_SSLMODE} needs the RDS CA bundle, but {DB_SSL_ROOT_CERT} is "
+            "missing. Download https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem "
+            "into backend/, or point DB_SSL_ROOT_CERT at it."
+        )
+    DB_CONNECT_ARGS["sslrootcert"] = str(DB_SSL_ROOT_CERT)
+
+#: Connections held open per process, and how many more may be opened under
+#: load before callers queue. Every worker and every instance draws on the
+#: same RDS connection cap (roughly a hundred on a micro instance), so keep
+#: the product of those numbers small.
+DB_POOL_SIZE = _number("DB_POOL_SIZE", 5)
+DB_MAX_OVERFLOW = _number("DB_MAX_OVERFLOW", 10)
 
 
 # --- JWT ------------------------------------------------------------------

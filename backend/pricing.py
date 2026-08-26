@@ -2,9 +2,8 @@
 
 The provider catalogs describe what *exists*; this module decides what is
 *sellable* and at what price. It is configuration, not a table, on purpose —
-the admin panel that will eventually edit these rows is waiting on the move to
-Postgres, and until then an env var the owner can change without a deploy is
-the honest version of "controllable by me".
+until there is an admin panel to edit such rows, an env var the owner can
+change without a deploy is the honest version of "controllable by me".
 
     policy_for("groq", <ModelInfo llama-3.1-8b-instant>)  -> free,    1 credit/token
     policy_for("groq", <ModelInfo gpt-oss-120b>)          -> premium, 5 credits/token

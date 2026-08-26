@@ -25,9 +25,9 @@ from pydantic.alias_generators import to_camel
 def _utc_iso(value: datetime) -> str:
     """Always emit an explicit UTC instant.
 
-    SQLite hands back naive datetimes, and `new Date("2026-08-10T12:00:00")` in
-    a browser reads that as *local* time — so without the trailing Z every
-    timestamp would silently shift by the reader's offset.
+    `timestamptz` columns come back aware, but a naive value from anywhere else
+    would be read by `new Date("2026-08-10T12:00:00")` in a browser as *local*
+    time — so the trailing Z is pinned on here whatever came in.
     """
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)

@@ -2,8 +2,3 @@
 .env
 __pycache__/
 .git/
-
-# SQLite database + WAL sidecars
-*.db
-*.db-shm
-*.db-wal

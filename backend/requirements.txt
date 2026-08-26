@@ -8,6 +8,5 @@ ollama
 sqlalchemy
 bcrypt
 pyjwt
-# Renders the UPI payment QR as SVG (no Pillow needed for SVG output).
 qrcode
-# Add for Postgres: psycopg[binary]
+psycopg[binary]

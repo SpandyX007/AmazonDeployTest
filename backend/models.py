@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db import Base, as_utc, utcnow
@@ -41,7 +41,7 @@ class User(Base):
     #: known once it ends, and the last turn of a balance is allowed to finish.
     credit_balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     #: Unlocks premium-tier models. Flipped by an approved payment.
-    is_premium: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    is_premium: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     premium_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(

@@ -9,7 +9,8 @@
     python -m backend.billing_cli show sam@x.com          balance + recent ledger
 
 Run from the repo root (or inside the container: `docker exec <ctr> python -m
-backend.billing_cli ...`). Talks to whatever DATABASE_URL points at.
+backend.billing_cli ...`). Talks to the same RDS database as the API — the
+DB_* settings in backend/.env.
 """
 
 from __future__ import annotations
