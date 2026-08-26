@@ -130,6 +130,40 @@ export function EyeIcon({ className }: IconProps) {
   )
 }
 
+export function LockIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="5" y="11" width="14" height="10" rx="1.5" />
+      <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    </svg>
+  )
+}
+
+export function CoinIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5v9M9.5 10a2.5 2 0 0 1 5 0c0 2.5-5 1.5-5 4a2.5 2 0 0 0 5 0" />
+    </svg>
+  )
+}
+
+export function CloseIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
+
 export function EyeOffIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>

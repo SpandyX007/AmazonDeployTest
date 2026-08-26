@@ -1,7 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { LogoutIcon, PlusIcon, SidebarIcon, TrashIcon } from './Icons'
+import { CoinIcon, LogoutIcon, PlusIcon, SidebarIcon, TrashIcon } from './Icons'
+import { useBilling } from '../context/billing-context'
 import type { Conversation, User } from '../types'
+
+const formatNumber = new Intl.NumberFormat('en-IN')
+
+/**
+ * Balance, as a bar against the free allowance (or the pack, once paid).
+ * A negative balance — the last turn overdrew — reads as an empty bar.
+ */
+function CreditMeter() {
+  const { billing, openPaywall } = useBilling()
+  if (!billing) return null
+
+  const { balance, isPremium, freeSignupCredits, pack, pendingPayment } = billing
+  const scale = Math.max(isPremium ? pack.credits : freeSignupCredits, 1)
+  const fraction = Math.max(0, Math.min(1, balance / scale))
+  const empty = balance <= 0
+  const low = !empty && fraction < 0.15
+
+  return (
+    <div className={`credit-meter ${empty ? 'is-empty' : low ? 'is-low' : ''}`}>
+      <div className="credit-meter-row">
+        <span className="label credit-meter-label">
+          <CoinIcon />
+          <span>{isPremium ? 'Premium' : 'Free tier'}</span>
+        </span>
+        <span className="credit-meter-value" title={`${balance} credits`}>
+          {formatNumber.format(Math.max(balance, 0))}
+          <em>credits</em>
+        </span>
+      </div>
+      <div className="credit-meter-bar" aria-hidden="true">
+        <span style={{ '--fill': fraction } as CSSProperties} />
+      </div>
+      <button
+        type="button"
+        className="credit-meter-cta"
+        onClick={() => openPaywall(empty ? 'insufficient_credits' : 'topup')}
+      >
+        {pendingPayment
+          ? 'Payment pending · check'
+          : empty
+            ? 'Out of credits · top up'
+            : isPremium
+              ? 'Add credits'
+              : `Unlock premium · ₹${pack.priceInr}`}
+      </button>
+    </div>
+  )
+}
 
 interface Props {
   open: boolean
@@ -59,6 +108,9 @@ export function Sidebar({
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const footRef = useRef<HTMLDivElement>(null)
+  const { billing } = useBilling()
+  // The billing context is fresher than the sign-in snapshot on the user.
+  const isPremium = billing?.isPremium ?? user?.isPremium ?? false
 
   // Dismiss the account menu on any click outside it.
   useEffect(() => {
@@ -149,6 +201,8 @@ export function Sidebar({
         )}
       </nav>
 
+      <CreditMeter />
+
       <div className="sidebar-foot" ref={footRef}>
         {menuOpen && (
           <div className="user-menu" role="menu">
@@ -183,6 +237,7 @@ export function Sidebar({
             <span className="user-name">{user?.name ?? 'Signed out'}</span>
             <span className="label user-plan">{user?.email ?? ''}</span>
           </span>
+          {isPremium && <span className="tier-tag">Pro</span>}
         </button>
       </div>
     </aside>

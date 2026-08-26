@@ -30,6 +30,19 @@ def _number(name: str, default: int) -> int:
         return default
 
 
+def _decimal(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, ""))
+    except ValueError:
+        return default
+
+
+def _csv(name: str, default: str = "") -> frozenset[str]:
+    raw = os.getenv(name)
+    value = default if raw is None else raw
+    return frozenset(item.strip() for item in value.split(",") if item.strip())
+
+
 # --- storage ---------------------------------------------------------------
 
 #: SQLite by default so the app boots with zero setup. Point this at
@@ -102,3 +115,47 @@ LOGIN_LOCKOUT_SECONDS = _number("LOGIN_LOCKOUT_SECONDS", 900)
 MEMORY_WINDOW_MESSAGES = _number("MEMORY_WINDOW_MESSAGES", 40)
 #: Prepended to every thread that has no system prompt of its own.
 DEFAULT_SYSTEM_PROMPT = os.getenv("DEFAULT_SYSTEM_PROMPT", "").strip()
+#: Hard cap on one reply. This is what bounds the overdraw: a turn's cost is
+#: unknown until it ends, so a balance of 1 credit can still run one full
+#: reply — but never more than this many tokens of one.
+MAX_COMPLETION_TOKENS = _number("MAX_COMPLETION_TOKENS", 2048)
+
+
+# --- credits & pricing -----------------------------------------------------
+#
+# Usage is metered in *credits*, not vendor tokens. One credit is one token on
+# a free-tier model; premium models charge a multiple of that per token. Keeping
+# the unit ours means three vendors with three tokenizers still draw down one
+# balance, and a price change is a config edit rather than a migration.
+
+#: Every new account starts with this many credits, for free.
+FREE_SIGNUP_CREDITS = _number("FREE_SIGNUP_CREDITS", 20_000)
+
+#: The one pack on sale: pay PAID_PACK_PRICE_INR, receive PAID_PACK_CREDITS
+#: and premium access. There is no gateway — the user pays a UPI QR and
+#: submits the transaction reference, which the owner approves by hand.
+PAID_PACK_PRICE_INR = _number("PAID_PACK_PRICE_INR", 10)
+PAID_PACK_CREDITS = _number("PAID_PACK_CREDITS", 200_000)
+
+#: Credits charged per token. Premium models cost this multiple of free ones.
+FREE_CREDITS_PER_TOKEN = _decimal("FREE_CREDITS_PER_TOKEN", 1.0)
+PREMIUM_CREDITS_PER_TOKEN = _decimal("PREMIUM_CREDITS_PER_TOKEN", 5.0)
+
+#: Which models are premium. A model is premium when its catalog `speed` is in
+#: PREMIUM_SPEEDS (this is what sorts Ollama's discovered models by size), or
+#: it is listed in PREMIUM_MODELS. FREE_MODELS overrides in the other direction.
+#: Entries are model ids, optionally qualified as `provider:model`.
+PREMIUM_SPEEDS = _csv("PREMIUM_SPEEDS", "Balanced,Deep")
+PREMIUM_MODELS = _csv("PREMIUM_MODELS")
+FREE_MODELS = _csv("FREE_MODELS")
+
+
+# --- UPI (manual payments) -------------------------------------------------
+
+#: The VPA the QR code points at, e.g. yourname@okaxis. Leave blank to hide
+#: the pay flow entirely — models stay locked but nobody is told to pay.
+UPI_ID = os.getenv("UPI_ID", "").strip()
+UPI_PAYEE_NAME = os.getenv("UPI_PAYEE_NAME", "").strip()
+#: Optional: a PNG/JPG/SVG of your own QR (e.g. the one your bank app gives
+#: you) to serve instead of one generated from UPI_ID.
+UPI_QR_IMAGE = os.getenv("UPI_QR_IMAGE", "").strip()

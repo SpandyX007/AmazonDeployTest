@@ -20,6 +20,10 @@ from .base import (  # noqa: E402
     Provider,
     ProviderError,
     ProviderStatus,
+    StreamItem,
+    Usage,
+    estimate_tokens,
+    estimate_usage,
     register,
     registry,
 )
@@ -35,6 +39,10 @@ __all__ = [
     "Provider",
     "ProviderError",
     "ProviderStatus",
+    "StreamItem",
+    "Usage",
+    "estimate_tokens",
+    "estimate_usage",
     "register",
     "registry",
 ]

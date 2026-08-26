@@ -6,8 +6,10 @@ import { ModelPicker } from '../components/ModelPicker'
 import { ChatMessage, TypingMessage } from '../components/ChatMessage'
 import { Composer } from '../components/Composer'
 import { KineticHeadline } from '../components/KineticHeadline'
+import { Paywall } from '../components/Paywall'
 import { MoonIcon, RetryIcon, SidebarIcon, SunIcon } from '../components/Icons'
 import { useAuth } from '../context/auth-context'
+import { useBilling } from '../context/billing-context'
 import { useTheme } from '../lib/theme'
 import * as api from '../lib/api'
 import type {
@@ -35,18 +37,26 @@ function storedSelection(): Selection | null {
   }
 }
 
-/** Keeps the choice only if the catalog still offers it — models come and go. */
+const formatNumber = new Intl.NumberFormat('en-IN')
+
+/**
+ * Keeps the choice only if the catalog still offers it — models come and go —
+ * and never lands on a locked model: a remembered premium pick from before
+ * the account lapsed falls back to the provider's first free one.
+ */
 function reconcile(providers: Provider[], wanted: Selection | null): Selection | null {
-  const usable = providers.filter((p) => p.available && p.models.length > 0)
+  const usable = providers.filter((p) => p.available && p.models.some((m) => !m.locked))
   if (usable.length === 0) return null
+
+  const firstOpen = (provider: Provider) => provider.models.find((m) => !m.locked)!
 
   const provider = usable.find((p) => p.id === wanted?.provider)
   if (provider) {
-    const model = provider.models.find((m) => m.id === wanted?.model) ?? provider.models[0]
-    return { provider: provider.id, model: model.id }
+    const model = provider.models.find((m) => m.id === wanted?.model && !m.locked)
+    return { provider: provider.id, model: (model ?? firstOpen(provider)).id }
   }
 
-  return { provider: usable[0].id, model: usable[0].models[0].id }
+  return { provider: usable[0].id, model: firstOpen(usable[0]).id }
 }
 
 /**
@@ -75,6 +85,7 @@ function toMessage(stored: StoredMessage): Message {
 export function Chat() {
   const { theme, toggle } = useTheme()
   const { user, signOut, signOutEverywhere } = useAuth()
+  const { billing, applyUsage, openPaywall } = useBilling()
   const navigate = useNavigate()
   const params = useParams<{ conversationId?: string }>()
   const routeId = params.conversationId ?? null
@@ -176,6 +187,16 @@ export function Chat() {
     })()
     return () => controller.abort()
   }, [loadCatalog])
+
+  // Locks are decided per account, so a payment landing mid-session means the
+  // catalog must be re-read to unlock the premium rows.
+  const premiumRef = useRef<boolean | undefined>(undefined)
+  useEffect(() => {
+    const premium = billing?.isPremium
+    if (premium === undefined) return
+    if (premiumRef.current !== undefined && premiumRef.current !== premium) void loadCatalog()
+    premiumRef.current = premium
+  }, [billing?.isPremium, loadCatalog])
 
   // Remember the choice across reloads.
   useEffect(() => {
@@ -304,7 +325,10 @@ export function Chat() {
       }
 
       // Boxed so the assignment inside the callback is visible afterwards.
-      const outcome: { stored: StoredMessage | null } = { stored: null }
+      const outcome: { stored: StoredMessage | null; refused: boolean } = {
+        stored: null,
+        refused: false,
+      }
 
       try {
         await api.streamChat({
@@ -338,6 +362,7 @@ export function Chat() {
           },
           onDone: (done) => {
             outcome.stored = done.message
+            if (done.usage) applyUsage(done.usage)
           },
         })
         cancelFlush()
@@ -345,16 +370,31 @@ export function Chat() {
       } catch (error) {
         cancelFlush()
         const failure = error as Error
-        // A user-initiated stop keeps whatever streamed in already.
-        if (failure.name === 'AbortError') write(text)
-        else write(text ? `${text}\n\n${failure.message}` : failure.message, true)
+        if (failure.name === 'AbortError') {
+          // A user-initiated stop keeps whatever streamed in already.
+          write(text)
+        } else if (failure instanceof api.ApiError && failure.isPaywall) {
+          // Refused before anything was written: no turn to show, just the
+          // paywall — and take the optimistic question back off the screen.
+          outcome.refused = true
+          openPaywall(failure.reason!)
+        } else {
+          write(text ? `${text}\n\n${failure.message}` : failure.message, true)
+        }
       } finally {
         abortRef.current = null
         setIsStreaming(false)
         setStreamingId(null)
 
         const stored = outcome.stored
-        if (stored) {
+        const optimisticId = outcome.refused ? pendingUserRef.current : null
+        if (optimisticId) {
+          // Refused before the question was stored: take it back off the
+          // screen and put it back in the composer for after the top-up.
+          pendingUserRef.current = null
+          setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+          if (content) setDraft(content)
+        } else if (stored) {
           // Adopt the server's id last, after the final write has landed.
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, id: stored.id } : m)),
@@ -374,7 +414,7 @@ export function Chat() {
         void refreshThreads()
       }
     },
-    [navigate, refreshThreads],
+    [navigate, refreshThreads, applyUsage, openPaywall],
   )
 
   function send(raw: string) {
@@ -485,6 +525,7 @@ export function Chat() {
               onSelect={(modelId) =>
                 setSelection((current) => (current ? { ...current, model: modelId } : current))
               }
+              onLocked={() => openPaywall('model_locked')}
             />
             <ProviderPicker
               providers={providers}
@@ -512,6 +553,12 @@ export function Chat() {
               <em>turns</em>
               {String(messages.length).padStart(2, '0')}
             </span>
+            {billing && (
+              <span className={`readout-cell ${billing.balance <= 0 ? 'is-alert' : ''}`}>
+                <em>credits</em>
+                {formatNumber.format(Math.max(billing.balance, 0))}
+              </span>
+            )}
             <span className="readout-cell">
               <span className={`pulse ${isStreaming ? 'is-live' : ''}`} />
               {isStreaming ? 'generating' : 'ready'}
@@ -585,6 +632,8 @@ export function Chat() {
           disabled={!selection}
         />
       </main>
+
+      <Paywall />
     </div>
   )
 }

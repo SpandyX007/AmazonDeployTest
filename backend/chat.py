@@ -17,9 +17,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.auth import current_user
+from backend.config import MAX_COMPLETION_TOKENS
+from backend.credits import authorise_turn, charge_usage, finalise_usage
 from backend.db import SessionLocal, get_db, utcnow
 from backend.models import Conversation, Message, User
-from backend.providers import ChatMessage, Provider, get_provider, list_providers
+from backend.pricing import ModelPolicy, policy_for
+from backend.providers import (
+    ChatMessage,
+    ModelInfo,
+    Provider,
+    Usage,
+    get_provider,
+    list_providers,
+)
 from backend.schemas import ChatReply, ChatTurnRequest, MessageOut
 from backend.store import memory, owned_conversation, title_from
 
@@ -29,7 +39,13 @@ router = APIRouter(tags=["chat"])
 # --- helpers ---------------------------------------------------------------
 
 
-def _resolve(payload: ChatTurnRequest) -> Provider:
+def _resolve(payload: ChatTurnRequest, user: User) -> tuple[Provider, ModelInfo, ModelPolicy]:
+    """Everything that can refuse a turn, before anything is written.
+
+    Order matters for what the user is told: a provider that is down is a 503
+    whoever asks, but "locked" and "out of credits" are about *this* account,
+    so they come last and only once the model is known to exist.
+    """
     provider = get_provider(payload.provider)
     if provider is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unknown provider '{payload.provider}'")
@@ -41,10 +57,49 @@ def _resolve(payload: ChatTurnRequest) -> Provider:
             availability.detail or f"{provider.label} is not available",
         )
 
-    if not payload.model.strip():
+    model_id = payload.model.strip()
+    if not model_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A model id is required")
 
-    return provider
+    model = provider.find_model(model_id)
+    if model is None:
+        # Only catalogued models are priced, so only catalogued models run.
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"{provider.label} has no model '{model_id}'"
+        )
+
+    policy = policy_for(provider.id, model)
+    authorise_turn(user, model, policy)
+    return provider, model, policy
+
+
+def _settle(
+    *,
+    user_id: str,
+    conversation_id: str | None,
+    saved: dict | None,
+    provider: Provider,
+    model_id: str,
+    policy: ModelPolicy,
+    turns: list[ChatMessage],
+    text: str,
+    usage: Usage | None,
+) -> dict | None:
+    """Bill a finished turn — including one the user stopped or that died
+    halfway, since the vendor metered those too. A turn that produced nothing
+    at all (the request itself was rejected) costs nothing."""
+    if not text and usage is None:
+        return None
+    message_id = int(saved["id"]) if saved and saved.get("id") else None
+    return charge_usage(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message_id=message_id,
+        provider_id=provider.id,
+        model_id=model_id,
+        usage=finalise_usage(turns, text, usage),
+        policy=policy,
+    )
 
 
 def _rewind_to(db: Session, conversation: Conversation, message_id: str) -> None:
@@ -172,16 +227,17 @@ def chat_stream(
         meta   once, up front — the thread id (new threads are created here)
         token  many — a chunk of the answer
         error  at most once — the provider failed
-        done   once — the stored assistant message
+        done   once — the stored assistant message, plus what the turn cost
 
     `meta` arriving first is what lets the browser swap its URL to /chat/<id>
     before a single token has been painted.
     """
-    provider = _resolve(payload)
+    provider, model, policy = _resolve(payload, user)
     conversation, turns, user_message, is_new = _open_turn(db, user, payload)
 
     # Snapshot everything the generator needs: it runs after the request scope
     # (and this session) has gone away.
+    user_id = user.id
     conversation_id = conversation.id
     meta = {
         "conversationId": conversation_id,
@@ -194,23 +250,42 @@ def chat_stream(
         yield _sse("meta", meta)
 
         text = ""
+        usage: Usage | None = None
         error: str | None = None
         saved: dict | None = None
+        bill: dict | None = None
         try:
             try:
-                for chunk in provider.stream(payload.model, turns):
-                    text += chunk
-                    yield _sse("token", {"text": chunk})
+                for item in provider.stream(
+                    model.id, turns, max_output_tokens=MAX_COMPLETION_TOKENS
+                ):
+                    if isinstance(item, Usage):
+                        usage = item
+                        continue
+                    text += item
+                    yield _sse("token", {"text": item})
             except Exception as exc:  # noqa: BLE001 - reported to the client as-is
                 error = f"{provider.label} request failed: {exc}"
         finally:
             # Runs on the happy path *and* when the browser hangs up mid-stream,
-            # so a stopped answer keeps whatever had already arrived.
-            saved = _record_reply(conversation_id, text, error, provider.id, payload.model)
+            # so a stopped answer keeps whatever had already arrived — and is
+            # paid for, because the vendor metered it either way.
+            saved = _record_reply(conversation_id, text, error, provider.id, model.id)
+            bill = _settle(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                saved=saved,
+                provider=provider,
+                model_id=model.id,
+                policy=policy,
+                turns=turns,
+                text=text,
+                usage=usage,
+            )
 
         if error:
             yield _sse("error", {"message": error})
-        yield _sse("done", {"conversationId": conversation_id, "message": saved})
+        yield _sse("done", {"conversationId": conversation_id, "message": saved, "usage": bill})
 
     return StreamingResponse(
         events(),
@@ -226,16 +301,27 @@ def chat(
     db: Session = Depends(get_db),
 ):
     """Non-streaming twin of the above, for scripts and integration tests."""
-    provider = _resolve(payload)
+    provider, model, policy = _resolve(payload, user)
     conversation, turns, _user_message, _is_new = _open_turn(db, user, payload)
 
-    text, error = "", None
+    text, usage, error = "", None, None
     try:
-        text = provider.complete(payload.model, turns)
+        text, usage = provider.complete(model.id, turns, max_output_tokens=MAX_COMPLETION_TOKENS)
     except Exception as exc:  # noqa: BLE001
         error = f"{provider.label} request failed: {exc}"
 
-    saved = _record_reply(conversation.id, text, error, provider.id, payload.model)
+    saved = _record_reply(conversation.id, text, error, provider.id, model.id)
+    bill = _settle(
+        user_id=user.id,
+        conversation_id=conversation.id,
+        saved=saved,
+        provider=provider,
+        model_id=model.id,
+        policy=policy,
+        turns=turns,
+        text=text,
+        usage=usage,
+    )
     if error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, error)
     if saved is None:
@@ -247,29 +333,53 @@ def chat(
         conversation_id=conversation.id,
         title=conversation.title or "New thread",
         message=MessageOut.model_validate(saved),
+        usage=bill,
     )
 
 
 @router.post("/response")
-def legacy_response(payload: dict, _user: User = Depends(current_user)):
-    """Legacy single-shot endpoint — first available provider, no memory."""
+def legacy_response(payload: dict, user: User = Depends(current_user)):
+    """Legacy single-shot endpoint — first available free model, no memory.
+
+    Metered like everything else: a route that talks to a vendor and does not
+    touch the balance would be a free way around the paywall.
+    """
     query = str(payload.get("query", "")).strip()
     if not query:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A query is required")
 
-    provider = next((p for p in list_providers() if p.status().available), None)
-    if provider is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No LLM provider is configured")
+    choice: tuple[Provider, ModelInfo, ModelPolicy] | None = None
+    for candidate in list_providers():
+        if not candidate.status().available:
+            continue
+        for info in candidate.models():
+            policy = policy_for(candidate.id, info)
+            if not policy.premium:
+                choice = (candidate, info, policy)
+                break
+        if choice:
+            break
+    if choice is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No free model is available")
 
-    models = provider.models()
-    if not models:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, f"{provider.label} has no models available"
-        )
+    provider, model, policy = choice
+    authorise_turn(user, model, policy)
 
+    turns = [ChatMessage(role="user", content=query)]
     try:
-        answer = provider.complete(models[0].id, [ChatMessage(role="user", content=query)])
+        answer, usage = provider.complete(model.id, turns, max_output_tokens=MAX_COMPLETION_TOKENS)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"LLM request failed: {exc}")
 
-    return {"response": answer}
+    bill = _settle(
+        user_id=user.id,
+        conversation_id=None,
+        saved=None,
+        provider=provider,
+        model_id=model.id,
+        policy=policy,
+        turns=turns,
+        text=answer,
+        usage=usage,
+    )
+    return {"response": answer, "usage": bill}

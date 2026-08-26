@@ -48,6 +48,29 @@ Two rules keep the service healthy:
   `ProviderStatus(False, "…")`, not crash the app — other providers keep working.
 - **Build clients lazily**, inside a method, for the same reason.
 
+### Report usage, or the turn gets estimated
+
+`stream()` yields text chunks and then, last, one `Usage(prompt_tokens,
+completion_tokens)` if the vendor reports counts. That `Usage` is what the
+account is billed on; without it the server charges an estimate from
+character lengths and flags the ledger row `estimated`. Vendors do report
+it — it is usually on the final chunk — so find where yours puts it:
+
+- OpenAI-format APIs: `stream_options={"include_usage": True}` → `chunk.usage`
+  (already handled by `OpenAICompatibleProvider`).
+- Ollama: `prompt_eval_count` / `eval_count` on the `done: true` chunk.
+
+Honour `max_output_tokens` too — it is the cap that stops one reply from
+overdrawing a nearly-empty balance by more than a known amount.
+
+### Tier and price come from the catalog
+
+`speed` is not just a label: by default a model whose speed is `Balanced` or
+`Deep` is **premium** (locked until the account pays, billed at
+`PREMIUM_CREDITS_PER_TOKEN`), and `Fastest`/`Fast` is free tier. Set it
+honestly. The owner can override any single model with `PREMIUM_MODELS` /
+`FREE_MODELS` in `.env` — see [`../pricing.py`](../pricing.py).
+
 ## 2. Register it
 
 Add one import to the marked block in [`__init__.py`](__init__.py):

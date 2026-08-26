@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import Iterable, Iterator, Literal
+from typing import Iterable, Iterator, Literal, Union
 
 Role = Literal["system", "user", "assistant"]
 
@@ -18,6 +18,55 @@ Role = Literal["system", "user", "assistant"]
 class ChatMessage:
     role: Role
     content: str
+
+
+@dataclass(frozen=True)
+class Usage:
+    """What one turn cost upstream, in the provider's own tokens.
+
+    Yielded *last* by `Provider.stream`, after the text. It is the one thing
+    the billing layer cannot reconstruct afterwards: by the time a stream ends
+    the vendor has already metered it, and their count — not ours — is what
+    they will invoice.
+
+    `estimated` marks a count we made up from character lengths because the
+    vendor sent nothing. Those rows are charged like any other but are flagged
+    so they can be found (and, if the estimate was unfair, refunded).
+    """
+
+    prompt_tokens: int
+    completion_tokens: int
+    estimated: bool = False
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+
+#: What `Provider.stream` yields: text deltas, then at most one `Usage`.
+StreamItem = Union[str, Usage]
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count when the vendor gives none: ~4 characters per token.
+
+    Deliberately not tiktoken — that would add a dependency that downloads
+    its vocabulary at first use, and no local tokenizer matches every vendor
+    anyway. This over-counts CJK and under-counts code slightly; the row is
+    flagged `estimated` either way.
+    """
+    return max(1, (len(text) + 3) // 4)
+
+
+def estimate_usage(messages: Iterable[ChatMessage], completion: str) -> Usage:
+    """Fallback `Usage` from the payload we sent and the text we got back."""
+    # Each message carries a few tokens of role/delimiter framing upstream.
+    prompt = sum(estimate_tokens(m.content) + 4 for m in messages)
+    return Usage(
+        prompt_tokens=prompt,
+        completion_tokens=estimate_tokens(completion) if completion else 0,
+        estimated=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -66,12 +115,43 @@ class Provider(ABC):
         """Selectable models. May be discovered at call time."""
 
     @abstractmethod
-    def stream(self, model: str, messages: Iterable[ChatMessage]) -> Iterator[str]:
-        """Yield response text chunks for the given conversation."""
+    def stream(
+        self,
+        model: str,
+        messages: Iterable[ChatMessage],
+        *,
+        max_output_tokens: int | None = None,
+    ) -> Iterator[StreamItem]:
+        """Yield response text chunks, then (if the vendor reports it) one `Usage`.
 
-    def complete(self, model: str, messages: Iterable[ChatMessage]) -> str:
+        `max_output_tokens` caps the completion. Billing relies on it: the
+        cost of a turn is unknown until it ends, so this is what bounds how
+        far past zero a nearly-empty balance can be driven by a single reply.
+        """
+
+    def complete(
+        self,
+        model: str,
+        messages: Iterable[ChatMessage],
+        *,
+        max_output_tokens: int | None = None,
+    ) -> tuple[str, Usage | None]:
         """Non-streaming convenience built on top of `stream`."""
-        return "".join(self.stream(model, messages))
+        parts: list[str] = []
+        usage: Usage | None = None
+        for item in self.stream(model, messages, max_output_tokens=max_output_tokens):
+            if isinstance(item, Usage):
+                usage = item
+            else:
+                parts.append(item)
+        return "".join(parts), usage
+
+    def find_model(self, model_id: str) -> ModelInfo | None:
+        """The catalog entry for an id, or None if this provider has no such model."""
+        try:
+            return next((m for m in self.models() if m.id == model_id), None)
+        except Exception:  # discovery failed — treat as unknown, not as a crash
+            return None
 
     def describe(self) -> dict:
         """Catalog entry consumed by the frontend."""

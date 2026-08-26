@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider } from './context/AuthProvider'
+import { BillingProvider } from './context/BillingProvider'
 import { useAuth } from './context/auth-context'
 import { Chat } from './pages/Chat'
 import { Landing } from './pages/Landing'
@@ -51,7 +52,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <BillingProvider>
+          <Routes>
           <Route path="/" element={<Landing />} />
           <Route
             path="/login"
@@ -85,8 +87,9 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BillingProvider>
       </AuthProvider>
     </BrowserRouter>
   )

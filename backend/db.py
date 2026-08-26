@@ -78,3 +78,29 @@ def init_db() -> None:
     from backend import models  # noqa: F401  (import registers the tables)
 
     Base.metadata.create_all(engine)
+    if _is_sqlite:
+        _patch_sqlite_columns()
+
+
+def _patch_sqlite_columns() -> None:
+    """Add columns that `create_all` will not: it creates missing *tables* only.
+
+    A stop-gap for the SQLite dev file, so an `app.db` from before credits
+    existed keeps booting. Existing accounts receive the signup grant as the
+    column default, without a ledger row — close enough for dev. Postgres does
+    not go through here; that is what Alembic is for.
+    """
+    from sqlalchemy import inspect, text
+
+    from backend.config import FREE_SIGNUP_CREDITS
+
+    wanted = {
+        "credit_balance": f"INTEGER NOT NULL DEFAULT {int(FREE_SIGNUP_CREDITS)}",
+        "is_premium": "BOOLEAN NOT NULL DEFAULT 0",
+        "premium_since": "DATETIME",
+    }
+    present = {column["name"] for column in inspect(engine).get_columns("users")}
+    with engine.begin() as connection:
+        for name, ddl in wanted.items():
+            if name not in present:
+                connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
