@@ -1,44 +1,48 @@
 """Engine, session factory, and the declarative base.
 
-One `DATABASE_URL` decides whether this is a local SQLite file or a managed
-Postgres — no other module knows the difference.
+The database is AWS RDS PostgreSQL. `backend.config` resolves the URL and the
+TLS options; this module owns the engine; nothing else in the package touches
+the driver — every other file asks for a `Session` and speaks SQLAlchemy.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
-from backend.config import DATABASE_URL
+from backend.config import DATABASE_URL, DB_CONNECT_ARGS, DB_MAX_OVERFLOW, DB_POOL_SIZE
 
-_is_sqlite = DATABASE_URL.startswith("sqlite")
+log = logging.getLogger("uvicorn.error")
+
+DB_URL = make_url(DATABASE_URL)
+if DB_URL.get_backend_name() != "postgresql":
+    raise RuntimeError(
+        "DATABASE_URL must point at PostgreSQL (postgresql+psycopg://...), "
+        f"not '{DB_URL.drivername}'"
+    )
 
 engine = create_engine(
-    DATABASE_URL,
-    # FastAPI runs sync endpoints on a threadpool, so a pooled connection can
-    # surface on a different thread than the one that opened it.
-    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    DB_URL,
+    connect_args=DB_CONNECT_ARGS,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    # The database is across a network now. A pooled connection can die
+    # underneath us — an RDS failover, a maintenance restart, an idle timeout
+    # on a NAT — and pre-ping swaps a dead one for a fresh one instead of
+    # handing the request a stack trace.
     pool_pre_ping=True,
+    # ...and recycling well inside any idle limit means a quiet hour does not
+    # leave the pool full of connections the other side has forgotten.
+    pool_recycle=1800,
     future=True,
 )
-
-
-if _is_sqlite:
-
-    @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(connection, _record):  # pragma: no cover - driver hook
-        cursor = connection.cursor()
-        # ON DELETE CASCADE is opt-in on SQLite; without this, deleting an
-        # account would leave its conversations behind.
-        cursor.execute("PRAGMA foreign_keys=ON")
-        # Readers stop blocking the writer — matters as soon as a streaming
-        # turn and a sidebar refresh overlap.
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.close()
-
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
@@ -52,10 +56,17 @@ def utcnow() -> datetime:
 
 
 def as_utc(value: datetime | None) -> datetime | None:
-    """SQLite hands back naive datetimes; re-attach UTC so comparisons work."""
+    """`timestamptz` columns come back timezone-aware, so this is normally a
+    no-op. It stays as a guard: a naive value from anywhere else must not blow
+    up a comparison against `utcnow()`."""
     if value is None or value.tzinfo is not None:
         return value
     return value.replace(tzinfo=timezone.utc)
+
+
+def describe() -> str:
+    """Where we are connected, password blanked — for the boot log."""
+    return f"{DB_URL.render_as_string(hide_password=True)} (sslmode={DB_CONNECT_ARGS['sslmode']})"
 
 
 def get_db() -> Iterator[Session]:
@@ -73,34 +84,49 @@ def get_db() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """Create any missing tables. Enough for a schema that only grows;
-    swap in Alembic once a column needs to change shape in production."""
+    """Make sure the database exists, then create any missing tables.
+
+    `create_all` is enough for a schema that only grows; swap in Alembic once
+    a column needs to change shape on data that must survive.
+    """
     from backend import models  # noqa: F401  (import registers the tables)
 
+    _ensure_database()
     Base.metadata.create_all(engine)
-    if _is_sqlite:
-        _patch_sqlite_columns()
 
 
-def _patch_sqlite_columns() -> None:
-    """Add columns that `create_all` will not: it creates missing *tables* only.
+def _ensure_database() -> None:
+    """Create the target database on the instance if it is not there yet.
 
-    A stop-gap for the SQLite dev file, so an `app.db` from before credits
-    existed keeps booting. Existing accounts receive the signup grant as the
-    column default, without a ledger row — close enough for dev. Postgres does
-    not go through here; that is what Alembic is for.
+    A fresh RDS instance has only the default `postgres` database. Rather than
+    make the first deploy a manual `CREATE DATABASE`, borrow that one for a
+    moment and create ours; every later boot connects straight through.
     """
-    from sqlalchemy import inspect, text
+    try:
+        with engine.connect():
+            return
+    except OperationalError as exc:
+        # Wrong host, bad password, blocked security group: surface as-is.
+        if "does not exist" not in str(exc):
+            raise
 
-    from backend.config import FREE_SIGNUP_CREDITS
-
-    wanted = {
-        "credit_balance": f"INTEGER NOT NULL DEFAULT {int(FREE_SIGNUP_CREDITS)}",
-        "is_premium": "BOOLEAN NOT NULL DEFAULT 0",
-        "premium_since": "DATETIME",
-    }
-    present = {column["name"] for column in inspect(engine).get_columns("users")}
-    with engine.begin() as connection:
-        for name, ddl in wanted.items():
-            if name not in present:
-                connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
+    name = DB_URL.database
+    log.info("Database %r not found on %s — creating it", name, DB_URL.host)
+    maintenance = create_engine(
+        DB_URL.set(database="postgres"),
+        connect_args=DB_CONNECT_ARGS,
+        poolclass=NullPool,
+        # CREATE DATABASE refuses to run inside a transaction block.
+        isolation_level="AUTOCOMMIT",
+    )
+    try:
+        with maintenance.connect() as conn:
+            quoted = conn.dialect.identifier_preparer.quote(name)
+            try:
+                conn.execute(text(f"CREATE DATABASE {quoted}"))
+            except ProgrammingError as exc:
+                # Two workers booting at once: the other one won the race.
+                if "already exists" not in str(exc):
+                    raise
+    finally:
+        maintenance.dispose()

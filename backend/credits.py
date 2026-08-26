@@ -79,8 +79,8 @@ def _apply(db: Session, user_id: str, delta: int, **fields) -> CreditEntry:
     """Shift a balance by `delta` and write the matching ledger row.
 
     Atomic at the database: the arithmetic happens in the UPDATE itself, not
-    in Python, and the new balance comes back from the same statement. Works
-    identically on SQLite (>= 3.35) and Postgres.
+    in Python, and the new balance comes back from the same statement's
+    RETURNING clause.
     """
     balance = db.execute(
         update(User)

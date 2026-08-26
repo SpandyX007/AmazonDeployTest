@@ -34,6 +34,7 @@ from backend.billing import router as billing_router  # noqa: E402
 from backend.chat import router as chat_router  # noqa: E402
 from backend.config import JWT_SECRET_IS_EPHEMERAL, UPI_ID  # noqa: E402
 from backend.conversations import router as conversations_router  # noqa: E402
+from backend.db import describe as describe_db  # noqa: E402
 from backend.db import init_db  # noqa: E402
 from backend.models import User  # noqa: E402
 from backend.pricing import policy_for  # noqa: E402
@@ -45,6 +46,7 @@ log = logging.getLogger("uvicorn.error")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    log.info("Database ready: %s", describe_db())
     if JWT_SECRET_IS_EPHEMERAL:
         # Not fatal in dev, but it must never pass unnoticed: with a fresh key
         # each boot, every access token issued before a restart stops verifying,

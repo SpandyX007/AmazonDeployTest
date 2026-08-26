@@ -10,4 +10,5 @@ bcrypt
 pyjwt
 # Renders the UPI payment QR as SVG (no Pillow needed for SVG output).
 qrcode
-# Add for Postgres: psycopg[binary]
+# PostgreSQL driver for AWS RDS. The binary wheel bundles libpq.
+psycopg[binary]
