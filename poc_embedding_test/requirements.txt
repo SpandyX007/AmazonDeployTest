@@ -2,3 +2,7 @@ langchain
 langchain-pinecone 
 langchain-ollama
 langchain-google-genai
+
+#not needed
+langchain-text-splitters beautifulsoup4
+requests
