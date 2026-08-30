@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 Dockerfile
 .gitignore
+.myapp/
+*.csv
+app.db
