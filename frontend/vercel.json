@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://nexus-oroe.onrender.com/api/:path*"},
+    { "source": "/api/:path*", "destination": "13.61.179.25/api/:path*"},
     { "source": "/:path*", "destination": "/index.html" }
   ]
 }
