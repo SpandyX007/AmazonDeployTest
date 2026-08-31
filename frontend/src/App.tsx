@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Analytics } from '@vercel/analytics/react'
 import { AuthProvider } from './context/AuthProvider'
 import { BillingProvider } from './context/BillingProvider'
 import { useAuth } from './context/auth-context'
@@ -91,6 +92,7 @@ export default function App() {
           </Routes>
         </BillingProvider>
       </AuthProvider>
+      <Analytics />
     </BrowserRouter>
   )
 }
